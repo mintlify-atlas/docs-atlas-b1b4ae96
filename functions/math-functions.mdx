@@ -1,0 +1,65 @@
+---
+title: "Math functions"
+description: "Reference for arithmetic and rounding functions in FiQueLa, including add, subtract, multiply, divide, ceil, floor, round, and modulo."
+---
+
+Math functions perform arithmetic and rounding operations on numeric field values. All variadic functions accept any mix of field names and literal numbers as arguments.
+
+## Reference
+
+| Fluent API method | FQL function | Description |
+|---|---|---|
+| `ceil($field)` | `CEIL(field)` | Round a number up to the nearest integer |
+| `floor($field)` | `FLOOR(field)` | Round a number down to the nearest integer |
+| `round($field, $decimals)` | `ROUND(field, decimals)` | Round a number to the given decimal places |
+| `modulo($field, $divisor)` | `MOD(field, divisor)` | Return the remainder of a division |
+| `add(...$operands)` | `ADD(...)` | Add two or more numbers or fields |
+| `subtract(...$operands)` | `SUB(...)` | Subtract operands from the first value |
+| `multiply(...$operands)` | `MULTIPLY(...)` | Multiply two or more numbers or fields |
+| `divide(...$operands)` | `DIVIDE(...)` | Divide the first value by subsequent operands |
+
+## Examples
+
+<CodeGroup>
+
+```php Fluent API
+$query
+    ->ceil('price')->as('priceCeil')
+    ->floor('price')->as('priceFloor')
+    ->round('price', 2)->as('priceRounded')
+    ->modulo('quantity', 3)->as('remainder')
+    ->add('price', 10, 'tax')->as('totalWithTax')
+    ->subtract('price', 5, 'discount')->as('netPrice')
+    ->multiply('price', 1.2, 'taxRate')->as('grossPrice')
+    ->divide('totalRevenue', 'quantity', 1.2)->as('unitNetRevenue');
+```
+
+```sql FQL
+SELECT
+    CEIL(price) AS priceCeil,
+    FLOOR(price) AS priceFloor,
+    ROUND(price, 2) AS priceRounded,
+    MOD(quantity, 3) AS remainder,
+    ADD(price, 10, tax) AS totalWithTax,
+    SUB(price, 5, discount) AS netPrice,
+    MULTIPLY(price, 1.2, taxRate) AS grossPrice,
+    DIVIDE(totalRevenue, quantity, 1.2) AS unitNetRevenue
+FROM json(./data/products.json).data.products
+```
+
+</CodeGroup>
+
+## Variadic arithmetic functions
+
+`ADD`, `SUB`, `MULTIPLY`, and `DIVIDE` accept a variable number of arguments. Each argument can be either a **field name** or a **literal number**. Field names are resolved against the current row; unresolved names fall back to being treated as literal values.
+
+```php
+// All of the following are valid:
+$query->add('price', 10)->as('withFlat');          // field + literal
+$query->add('price', 'tax', 'fee')->as('total');   // field + fields
+$query->add(5, 10, 15)->as('constantSum');         // literals only
+```
+
+<Note>
+For `SUB` and `DIVIDE`, the first operand is the initial value. Subsequent operands are subtracted from or divided into it in order.
+</Note>

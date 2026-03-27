@@ -1,97 +1,83 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "FiQueLa — File Query Language"
+description: "Query JSON, XML, CSV, XLS, YAML, and NEON files using SQL-like syntax — directly in PHP, without a database."
 ---
 
-## Setting up
+FiQueLa lets you filter, join, group, and aggregate data from structured files using familiar SQL concepts. Write queries as PHP fluent API calls or as SQL-like strings — your choice.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Installation" icon="box" href="/installation">
+    Install via Composer and set up optional format dependencies.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Write your first query against a file in under 5 minutes.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Fluent API" icon="code" href="/querying/fluent-api">
+    Build queries with a chainable PHP API — selects, filters, joins, and more.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="FQL Syntax" icon="terminal" href="/querying/fql-syntax">
+    Write SQL-like strings to query files directly using the File Query Language.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## Why FiQueLa?
 
-Everything you need to create world-class documentation.
+Work with structured files using SQL concepts you already know — no database setup required.
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+- **Universal format support** — XML, JSON, NDJSON, CSV, XLS/XLSX, ODS, YAML, NEON, and directories
+- **Two query interfaces** — fluent PHP API or FQL string syntax, interchangeable
+- **Stream-first** — large JSON, XML, and CSV files processed with low memory overhead
+- **Full SQL feature set** — `JOIN`, `GROUP BY`, `HAVING`, `ORDER BY`, `UNION`, `EXPLAIN`, and 40+ built-in functions
+- **DTO mapping** — map results directly to typed PHP objects
 
-## Need inspiration?
+## Explore the docs
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<CardGroup cols={2}>
+  <Card title="Supported formats" icon="file" href="/concepts/supported-formats">
+    See which file formats are supported and how to open them.
+  </Card>
+  <Card title="Query lifecycle" icon="arrows-spin" href="/concepts/query-lifecycle">
+    Understand how FiQueLa executes a query step by step.
+  </Card>
+  <Card title="Conditions & operators" icon="filter" href="/querying/conditions">
+    Filter data with WHERE, AND, OR, XOR, LIKE, REGEXP, BETWEEN, and more.
+  </Card>
+  <Card title="Functions reference" icon="function" href="/functions/string-functions">
+    Browse 40+ built-in string, math, date, array, and hashing functions.
+  </Card>
+  <Card title="Joins" icon="link" href="/querying/joins">
+    Join data across multiple files and formats in a single query.
+  </Card>
+  <Card title="EXPLAIN & benchmarking" icon="chart-bar" href="/advanced/explain-analyze">
+    Inspect query execution plans and benchmark performance.
+  </Card>
+</CardGroup>
+
+## Quick example
+
+```php
+use FQL\Query;
+use FQL\Enum\Operator;
+
+$results = Query\Provider::fromFileQuery('xml(./products.xml).SHOP.SHOPITEM')
+    ->selectAll()
+    ->where('PRICE', Operator::LESS_THAN_OR_EQUAL, 200)
+    ->orderBy('PRICE')->desc()
+    ->limit(10)
+    ->execute()
+    ->fetchAll();
+```
+
+Or using FQL string syntax:
+
+```php
+use FQL\Query;
+
+$results = Query\Provider::fql(<<<FQL
+    SELECT *
+    FROM xml(./products.xml).SHOP.SHOPITEM
+    WHERE PRICE <= 200
+    ORDER BY PRICE DESC
+    LIMIT 10
+FQL)->execute()->fetchAll();
+```

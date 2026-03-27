@@ -1,0 +1,278 @@
+---
+title: "FQL syntax"
+description: "Reference for File Query Language — a SQL-like string syntax for querying files directly in FiQueLa."
+---
+
+File Query Language (FQL) is a SQL-like string syntax for querying structured files. It mirrors the [fluent API](/querying/fluent-api) feature-for-feature, and every fluent query can be serialized to FQL by casting it to a string.
+
+```php
+use FQL\Query;
+
+$results = Query\Provider::fql(<<<SQL
+    SELECT *
+    FROM xml(./products.xml).SHOP.SHOPITEM
+    WHERE PRICE <= 200
+    ORDER BY PRICE DESC
+    LIMIT 10
+SQL)->execute()->fetchAll();
+```
+
+## FileQuery syntax
+
+The `FROM`, `JOIN`, and `INTO` clauses use the FileQuery notation to reference files:
+
+```
+format(pathToFile[, params]).path.to.data
+```
+
+| Part | Description |
+|---|---|
+| `format` | Format identifier: `xml`, `json`, `csv`, `yaml`, `neon`, `ods`, `xls`, `dir`. If omitted, format is detected from the file extension. |
+| `pathToFile` | Relative or absolute path to the file (unquoted) |
+| `params` | Optional: positional (`"value"`) or named (`key: "value"`). Cannot be mixed |
+| `path.to.data` | Dot-separated path to the data root within the file |
+
+**Examples:**
+
+```
+xml(feed.xml).SHOP.ITEM
+csv(data.csv, "windows-1250", ";").*
+csv(data.csv, encoding: "windows-1250", delimiter: ";").*
+json(data.json).data.users
+```
+
+**Default parameter values:**
+
+| Format | Parameter | Default |
+|---|---|---|
+| CSV | `encoding` | `utf-8` |
+| CSV | `delimiter` | `,` |
+| XML | `encoding` | `utf-8` |
+
+## SELECT
+
+```sql
+SELECT
+    [DISTINCT]
+    select_expr [AS alias] [, select_expr [AS alias]] ...
+    [EXCLUDE excl_expr [, excl_expr] ...]
+```
+
+- `select_expr` — column name, function call, or literal. Supports dot notation for nested fields. `*` selects all fields and can be combined with additional expressions (`SELECT *, totalPrice`).
+- `AS alias` — optional alias for the expression.
+- `EXCLUDE` — removes the listed fields from the output. Fields excluded this way can still be used in `HAVING` conditions.
+
+**Examples:**
+
+```sql
+SELECT id, name, brand.code AS brandCode
+FROM json(products.json).data.products
+```
+
+```sql
+SELECT DISTINCT category
+FROM json(products.json).data.products
+```
+
+```sql
+SELECT
+    brand.code AS brandCode,
+    COUNT(id) AS productCount
+EXCLUDE productCount
+FROM json(products.json).data.products
+HAVING productCount > 1
+```
+
+## FROM
+
+```sql
+FROM file_reference
+```
+
+where `file_reference` is a FileQuery string. The path inside the FileQuery sets the data root:
+
+```sql
+FROM csv(./examples/data/products.csv).*
+FROM xml(./feed.xml).SHOP.SHOPITEM
+FROM json(./data.json).data.users
+```
+
+## WHERE and HAVING
+
+```sql
+[WHERE where_condition [AND|OR|XOR where_condition ...]]
+[HAVING where_condition [AND|OR|XOR where_condition ...]]
+```
+
+Condition syntax:
+
+```sql
+field_expr comparison_operator value_expr
+```
+
+`WHERE` filters rows before aggregation. `HAVING` filters after aggregation.
+
+**Examples:**
+
+```sql
+WHERE price > 100 AND name LIKE "%widget%"
+HAVING total_count > 5 OR total_revenue > 1000
+```
+
+FQL supports parentheses for grouping conditions:
+
+```sql
+WHERE price > 100
+  AND (name LIKE "%widget%" OR stock > 0)
+```
+
+See [Conditions](/querying/conditions) for all operators.
+
+## GROUP BY
+
+```sql
+[GROUP BY group_expr [, group_expr] ...]
+```
+
+Dot notation is supported for nested fields:
+
+```sql
+GROUP BY brand.code
+GROUP BY category.id, brand.code
+```
+
+## ORDER BY
+
+```sql
+[ORDER BY order_expr [ASC|DESC] [, order_expr [ASC|DESC]] ...]
+```
+
+```sql
+ORDER BY price DESC
+ORDER BY productCount DESC, totalPrice ASC
+```
+
+## LIMIT and OFFSET
+
+```sql
+[LIMIT row_count [OFFSET offset]]
+[LIMIT row_count, offset]
+```
+
+```sql
+LIMIT 10
+LIMIT 20 OFFSET 40
+LIMIT 20, 40
+```
+
+## EXPLAIN and EXPLAIN ANALYZE
+
+Prepend `EXPLAIN` to return a query execution plan without processing data. Use `EXPLAIN ANALYZE` to execute the query and collect real row counts and timings.
+
+```sql
+EXPLAIN
+SELECT id, name
+FROM json(./products.json).data.products
+WHERE price > 100
+ORDER BY name DESC
+LIMIT 10
+```
+
+```sql
+EXPLAIN ANALYZE
+SELECT id, name
+FROM json(./products.json).data.products
+WHERE price > 100
+ORDER BY name DESC
+LIMIT 10
+```
+
+Output columns: `phase`, `rows_in`, `rows_out`, `filtered`, `time_ms`, `duration_pct`, `mem_peak_kb`, `note`.
+
+## UNION and UNION ALL
+
+```sql
+select_statement
+UNION [ALL]
+select_statement
+[UNION [ALL] select_statement ...]
+```
+
+`UNION` removes duplicate rows. `UNION ALL` keeps all rows. The number of selected columns must match across all queries.
+
+```sql
+SELECT name, price FROM json(products.json).data.products
+WHERE price <= 100
+UNION
+SELECT name, price FROM json(products.json).data.products
+WHERE price >= 400
+```
+
+```sql
+SELECT name, price FROM xml(./feed1.xml).SHOP.ITEM
+WHERE price > 100
+UNION
+SELECT name, price FROM xml(./feed2.xml).SHOP.ITEM
+WHERE price > 200
+UNION ALL
+SELECT name, price FROM xml(./feed3.xml).SHOP.ITEM
+```
+
+## INTO
+
+Export query results to a file using the same FileQuery notation:
+
+```sql
+SELECT name, price
+FROM csv(./products.csv).*
+INTO json(./exports/products.json).root.items
+```
+
+The meaning of the `.query` path in `INTO` depends on the target format:
+
+| Format | `.query` meaning | Example |
+|---|---|---|
+| XML | `ROOT.ROW` — root element and row element | `.SHOP.ITEM` |
+| JSON | Nested key path for the resulting array | `.root.items` |
+| XLSX/ODS | `SheetName.StartCell` | `.Sheet1.B4` |
+| CSV | Ignored | — |
+| NDJSON | Ignored | — |
+
+<Note>
+  Existing target files are not overwritten — an exception is thrown if the file already exists. Missing output directories are created automatically.
+</Note>
+
+## FQL vs fluent API
+
+<CodeGroup>
+
+```sql FQL string
+SELECT
+  brand.code AS brandCode,
+  GROUP_CONCAT(id, "/") AS products,
+  SUM(price) AS totalPrice,
+  COUNT(id) AS productCount
+FROM json(products.json).data.products
+WHERE
+  price < 300
+  OR price > 400
+GROUP BY brand.code
+ORDER BY productCount DESC
+```
+
+```php Fluent API
+use FQL\Query;
+use FQL\Enum\Operator;
+
+$query = Query\Provider::fromFileQuery('json(products.json).data.products')
+    ->select('brand.code')->as('brandCode')
+    ->groupConcat('id', '/')->as('products')
+    ->sum('price')->as('totalPrice')
+    ->count('id')->as('productCount')
+    ->where('price', Operator::LESS_THAN, 300)
+    ->or('price', Operator::GREATER_THAN, 400)
+    ->groupBy('brand.code')
+    ->orderBy('productCount')->desc();
+```
+
+</CodeGroup>

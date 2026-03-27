@@ -1,0 +1,147 @@
+---
+title: "Opening files"
+description: "Four ways to open files and start querying with FiQueLa: Stream\\Provider, direct stream classes, Query\\Provider::fromFileQuery(), and Query\\Provider::fql()."
+---
+
+FiQueLa provides several ways to open a file and obtain a query object. All approaches ultimately produce the same chainable query interface.
+
+<Tabs>
+  <Tab title="fromFile()">
+    Use `Stream\Provider::fromFile()` to open a file. The format is detected from the file extension automatically, or you can pass an explicit `Format` enum.
+
+    ```php
+    use FQL\Enum;
+    use FQL\Stream;
+
+    // Format detected from extension
+    $xml = Stream\Provider::fromFile('just/a/path/to/whatever/file.xml');
+
+    // Explicit format
+    $xml = Stream\Provider::fromFile('just/a/path/to/whatever/file', Enum\Format::XML);
+
+    $query = $xml->query()
+        ->selectAll()
+        ->from('SHOP.SHOPITEM')
+        ->where('EAN', Enum\Operator::EQUAL, '1234567891011')
+        ->or('PRICE', Enum\Operator::LESS_THAN_OR_EQUAL, 200)
+        ->orderBy('PRICE')->desc()
+        ->limit(10);
+    ```
+  </Tab>
+  <Tab title="Direct stream class">
+    Each supported format has a dedicated stream class with an `open()` static method.
+
+    ```php
+    use FQL\Stream;
+
+    $xml  = Stream\Xml::open('path/to/feed.xml');
+    $json = Stream\Json::open('path/to/data.json');
+    $csv  = Stream\Csv::open('path/to/data.csv');
+    $yaml = Stream\Yaml::open('path/to/data.yaml');
+    $neon = Stream\Neon::open('path/to/data.neon');
+    $xls  = Stream\Xls::open('path/to/data.xlsx');
+
+    $query = $xml->query()
+        ->selectAll()
+        ->from('SHOP.SHOPITEM');
+    ```
+  </Tab>
+  <Tab title="fromFileQuery()">
+    `Query\Provider::fromFileQuery()` accepts a **FileQuery string** that encodes the format, file path, optional parameters, and the data path in one compact string.
+
+    ```php
+    use FQL\Enum;
+    use FQL\Query;
+
+    $query = Query\Provider::fromFileQuery('xml(./path/to/file.xml).SHOP.SHOPITEM')
+        ->selectAll()
+        ->where('EAN', Enum\Operator::EQUAL, '1234567891011')
+        ->or('PRICE', Enum\Operator::LESS_THAN_OR_EQUAL, 200)
+        ->orderBy('PRICE')->desc()
+        ->limit(10);
+    ```
+
+    Pass extra parameters for CSV encoding or delimiter:
+
+    ```php
+    // Positional parameters
+    $query = Query\Provider::fromFileQuery('csv(data.csv, "windows-1250", ";").*');
+
+    // Named parameters
+    $query = Query\Provider::fromFileQuery('csv(data.csv, encoding: "windows-1250", delimiter: ";").*');
+    ```
+  </Tab>
+  <Tab title="fql()">
+    `Query\Provider::fql()` parses a complete FQL string and returns a ready-to-execute query object. This is the most self-contained approach — the file reference lives entirely inside the SQL string.
+
+    ```php
+    use FQL\Query;
+
+    $query = Query\Provider::fql(<<<SQL
+    SELECT *
+    FROM xml(./products_file.tmp).SHOP.SHOPITEM
+    WHERE EAN = "1234567891011"
+        OR PRICE <= 200
+    SQL
+    );
+    ```
+
+    See [FQL syntax](/querying/fql-syntax) for the full language reference.
+  </Tab>
+</Tabs>
+
+## FileQuery syntax
+
+The FileQuery string is a compact notation used in `fromFileQuery()` and inside FQL `FROM`, `JOIN`, and `INTO` clauses.
+
+```
+format(pathToFile[, params]).path.to.data
+```
+
+| Part | Description |
+|---|---|
+| `format` | Format name written directly before the parenthesis: `xml`, `json`, `csv`, `yaml`, `neon`, `ods`, `xls`, `dir` |
+| `pathToFile` | First argument — a relative or absolute path to the file (unquoted) |
+| `params` | Optional additional arguments: positional (`"value"`) or named (`key: "value"`). Cannot be mixed |
+| `path.to.data` | Dot-separated path to the data root within the file |
+
+**Examples:**
+
+```
+xml(feed.xml).SHOP.ITEM
+csv(data.csv, "windows-1250", ";").*
+csv(data.csv, encoding: "windows-1250", delimiter: ";").*
+json(data.json).data.users
+```
+
+### Default parameter values
+
+Default values are omitted from the serialized output. For example, `csv(data.csv)` is equivalent to `csv(data.csv, "utf-8", ",")`.
+
+| Format | Parameter | Default |
+|---|---|---|
+| CSV | `encoding` | `utf-8` |
+| CSV | `delimiter` | `,` |
+| XML | `encoding` | `utf-8` |
+
+## Querying from a string
+
+You can also open an in-memory string rather than a file using `Stream\Provider::fromString()`.
+
+```php
+use FQL\Enum;
+use FQL\Stream;
+
+$json = Stream\Provider::fromString(
+    '{"data":[{"id":3,"name":"Product"}]}',
+    Enum\Format::JSON
+);
+
+$query = $json->query()
+    ->selectAll()
+    ->from('data');
+```
+
+<Note>
+  All opening methods return the same `Interface\Query` object, so you can chain the same fluent methods regardless of how you opened the file.
+</Note>

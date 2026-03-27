@@ -1,0 +1,146 @@
+---
+title: "String functions"
+description: "Reference for all string manipulation functions available in FiQueLa, including concatenation, case conversion, padding, substring extraction, and fulltext search."
+---
+
+String functions operate on text values in your query results. Each function is available as both a Fluent API method and a FQL keyword.
+
+## Reference
+
+| Fluent API method | FQL function | Description |
+|---|---|---|
+| `concat(...$fields)` | `CONCAT(...)` | Concatenate values with no separator |
+| `concatWithSeparator($sep, ...$fields)` | `CONCAT_WS(sep, ...)` | Concatenate values with a separator |
+| `lower($field)` | `LOWER(field)` | Convert string to lower case |
+| `upper($field)` | `UPPER(field)` | Convert string to upper case |
+| `reverse($field)` | `REVERSE(field)` | Reverse a string |
+| `explode($field, $delimiter)` / `split($field, $delimiter)` | `EXPLODE(field, delimiter)` | Split a string into an array (`split()` is an alias) |
+| `implode($field, $glue)` / `glue($field, $glue)` | `IMPLODE(field, glue)` | Join an array into a string (`glue()` is an alias) |
+| `fromBase64($field)` | `BASE64_ENCODE(field)` | Decode a base64-encoded string |
+| `toBase64($field)` | `BASE64_DECODE(field)` | Encode a string to base64 |
+| `randomString($length)` | `RANDOM_STRING(length)` | Generate a random alphanumeric string |
+| `matchAgainst($fields, $query)` | `MATCH(...) AGAINST(...)` | Compute a fulltext relevance score |
+| `leftPad($field, $length, $pad)` | `LPAD(field, length, pad)` | Left-pad a string to a given length |
+| `rightPad($field, $length, $pad)` | `RPAD(field, length, pad)` | Right-pad a string to a given length |
+| `substring($field, $start, $length)` | `SUBSTRING(field, start, length)` | Extract a substring |
+| `locate($needle, $field)` | `LOCATE(needle, field)` | Find the position of a substring |
+| `replace($field, $search, $replace)` | `REPLACE(field, search, replace)` | Replace all occurrences of a substring |
+
+## Examples
+
+<CodeGroup>
+
+```php Fluent API
+$query
+    ->concat('ArticleNr', 'CatalogNr')->as('fullRef')
+    ->concatWithSeparator('/', 'ArticleNr', 'CatalogNr')->as('slashRef')
+    ->lower('name')->as('nameLower')
+    ->upper('name')->as('nameUpper')
+    ->reverse('name')->as('nameReversed')
+    ->explode('tags', '|')->as('tagArray')
+    ->implode('categories[].id', '|')->as('categoryIds')
+    ->fromBase64('encodedField')->as('decoded')
+    ->toBase64('plainField')->as('encoded')
+    ->randomString(16)->as('token')
+    ->leftPad('code', 10, '0')->as('paddedCode')
+    ->rightPad('code', 10, '-')->as('trailingCode')
+    ->substring('name', 0, 5)->as('namePrefix')
+    ->locate('World', 'greeting')->as('pos')
+    ->replace('description', 'SQL', 'FQL')->as('updatedDesc');
+```
+
+```sql FQL
+SELECT
+    CONCAT(ArticleNr, CatalogNr) AS fullRef,
+    CONCAT_WS('/', ArticleNr, CatalogNr) AS slashRef,
+    LOWER(name) AS nameLower,
+    UPPER(name) AS nameUpper,
+    REVERSE(name) AS nameReversed,
+    EXPLODE(tags, '|') AS tagArray,
+    IMPLODE(categories[].id, '|') AS categoryIds,
+    BASE64_ENCODE(encodedField) AS decoded,
+    BASE64_DECODE(plainField) AS encoded,
+    RANDOM_STRING(16) AS token,
+    LPAD(code, 10, '0') AS paddedCode,
+    RPAD(code, 10, '-') AS trailingCode,
+    SUBSTRING(name, 0, 5) AS namePrefix,
+    LOCATE('World', greeting) AS pos,
+    REPLACE(description, 'SQL', 'FQL') AS updatedDesc
+FROM json(./data/products.json).data.products
+```
+
+</CodeGroup>
+
+<Note>
+`SUBSTRING` and `SUBSTR` are aliases — both accept `(field, start, length)` and produce identical results.
+</Note>
+
+## Fulltext search
+
+The `MATCH...AGAINST` construct computes a relevance score for one or more text fields against a search query. The result is a floating-point score you can filter and sort on.
+
+```
+MATCH(field [, field ...]) AGAINST('search_query' [IN [NATURAL | BOOLEAN] MODE])
+```
+
+### Modes
+
+| Mode | Description |
+|---|---|
+| `NATURAL` (default) | Term-frequency scoring. Each matching term contributes to the score. |
+| `BOOLEAN` | Supports `+` (required), `-` (exclude), and `*` (wildcard) operators. |
+
+Fields listed earlier in the `MATCH` argument list receive a higher weight than later fields.
+
+<CodeGroup>
+
+```php Fluent API
+$query
+    ->select('id', 'name', 'description')
+    ->matchAgainst(['name', 'description'], 'search query')->as('_score')
+    ->having('_score', \FQL\Enum\Operator::GREATER_THAN, 0.5)
+    ->orderBy('_score', \FQL\Enum\Sort::DESC);
+```
+
+```sql FQL
+SELECT
+    id,
+    name,
+    description,
+    MATCH(name, description) AGAINST('search query' IN NATURAL MODE) AS _score
+FROM json(./data/products.json).data.products
+HAVING _score > 0.5
+ORDER BY _score DESC
+```
+
+</CodeGroup>
+
+## Hashing functions
+
+Hashing functions produce a fixed-length digest from a field value. They are available alongside string functions in the Fluent API.
+
+| Fluent API method | FQL function | Description |
+|---|---|---|
+| `md5($field)` | `MD5(field)` | MD5 hash of the value |
+| `sha1($field)` | `SHA1(field)` | SHA-1 hash of the value |
+
+<CodeGroup>
+
+```php Fluent API
+$query
+    ->md5('id')->as('idHash')
+    ->sha1('name')->as('nameHash');
+```
+
+```sql FQL
+SELECT
+    MD5(id) AS idHash,
+    SHA1(name) AS nameHash
+FROM json(./data/products.json).data.products
+```
+
+</CodeGroup>
+
+<Warning>
+Hashing functions are one-way — they cannot be reversed. Do not use them to store passwords; use a proper password-hashing library instead.
+</Warning>

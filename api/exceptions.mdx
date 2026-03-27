@@ -1,0 +1,285 @@
+---
+title: "Exceptions"
+description: "All exception classes in the FQL\\Exception namespace, when they are thrown, and how to catch them."
+---
+
+## Overview
+
+**Namespace:** `FQL\Exception`
+
+All FiQueLa exceptions extend either a standard PHP exception class or `FQL\Exception\Exception` (which itself extends `\Exception`). You can catch them by specific type or use the base classes to catch groups.
+
+```php
+use FQL\Query\Provider;
+use FQL\Exception\FileNotFoundException;
+use FQL\Exception\InvalidFormatException;
+use FQL\Exception\Exception as FQLException;
+
+try {
+    $results = Provider::fromFile('data.json')
+        ->select('id', 'name')
+        ->execute();
+} catch (FileNotFoundException $e) {
+    // File does not exist or is not readable
+} catch (InvalidFormatException $e) {
+    // Unrecognised file extension or format
+} catch (FQLException $e) {
+    // Any other FiQueLa exception
+}
+```
+
+---
+
+## Base exception
+
+### `Exception`
+
+```
+FQL\Exception\Exception extends \Exception
+```
+
+Root base class for most FiQueLa-specific exceptions. Catch this to handle any FiQueLa error that is not a logic error or a standard PHP SPL exception.
+
+---
+
+## File and I/O exceptions
+
+### `FileNotFoundException`
+
+```
+FQL\Exception\FileNotFoundException extends Exception
+```
+
+Thrown when the file passed to `fromFile()`, `open()`, or any stream factory cannot be found on the filesystem or is not readable.
+
+**Thrown by:** `Stream\Provider::fromFile()`, `Query\Provider::fromFile()`, `Csv::open()`, and all other stream `open()` methods.
+
+```php
+use FQL\Exception\FileNotFoundException;
+
+try {
+    $query = \FQL\Query\Provider::fromFile('/non/existent/file.json');
+} catch (FileNotFoundException $e) {
+    echo 'File not found: ' . $e->getMessage();
+}
+```
+
+---
+
+### `FileAlreadyExistsException`
+
+```
+FQL\Exception\FileAlreadyExistsException extends \RuntimeException
+```
+
+Thrown when attempting to create or write to a file that already exists and overwriting is not permitted.
+
+---
+
+### `UnableOpenFileException`
+
+```
+FQL\Exception\UnableOpenFileException extends \Exception
+```
+
+Thrown when a file is found but cannot be opened for reading (e.g. due to OS-level permissions or a corrupted file handle).
+
+---
+
+### `FileQueryException`
+
+```
+FQL\Exception\FileQueryException extends InvalidArgumentException
+```
+
+Thrown when a FileQuery string (the URI-style path used by `fromFileQuery()` and `into()`) is malformed or references a missing target file.
+
+**Thrown by:** `ResultsProvider::into()`, `Query\Provider::fromFileQuery()`.
+
+---
+
+## Format and argument exceptions
+
+### `InvalidFormatException`
+
+```
+FQL\Exception\InvalidFormatException extends Exception
+```
+
+Thrown when the file extension cannot be mapped to a known format, or when `fromString()` is called with an unsupported format. Also thrown for invalid CSV parameters (bad delimiter, unsupported encoding, etc.).
+
+**Thrown by:** `Format::fromExtension()`, `Stream\Provider::fromFile()`, `Stream\Provider::fromString()`, `Format::fromString()`.
+
+```php
+use FQL\Exception\InvalidFormatException;
+
+try {
+    $stream = \FQL\Stream\Provider::fromFile('archive.zip');
+} catch (InvalidFormatException $e) {
+    echo 'Unsupported format: ' . $e->getMessage();
+}
+```
+
+---
+
+### `InvalidArgumentException`
+
+```
+FQL\Exception\InvalidArgumentException extends \InvalidArgumentException
+```
+
+Base class for all argument-validation exceptions in FiQueLa. Thrown when a method receives a value that is out of range or of the wrong type — for example, passing an unsupported operator string to `Operator::fromOrFail()`, or providing a non-scalar BETWEEN range.
+
+---
+
+### `UnexpectedValueException`
+
+```
+FQL\Exception\UnexpectedValueException extends \UnexpectedValueException
+```
+
+Thrown when a value does not match the expected domain — for example, when trying to override already-set `WHERE` or `HAVING` conditions.
+
+---
+
+## Query construction exceptions
+
+These exceptions are thrown during query building (before `execute()` is called).
+
+### `QueryLogicException`
+
+```
+FQL\Exception\QueryLogicException extends \LogicException
+```
+
+Thrown when mutually exclusive query clauses are combined — specifically:
+- Using `DISTINCT` together with `GROUP BY`.
+- Using `GROUP BY` together with `DISTINCT`.
+- Using `UNION` with mismatched column counts between the main query and a union query.
+
+```php
+use FQL\Exception\QueryLogicException;
+
+try {
+    $query->distinct()->groupBy('category'); // throws
+} catch (QueryLogicException $e) {
+    echo 'Query logic error: ' . $e->getMessage();
+}
+```
+
+---
+
+### `SelectException`
+
+```
+FQL\Exception\SelectException extends InvalidArgumentException
+```
+
+Prefixes its message with `SELECT:`. Thrown when:
+- A field is selected more than once with `select()`.
+- A `modulo()` division produces an unexpected value.
+
+---
+
+### `AliasException`
+
+```
+FQL\Exception\AliasException extends InvalidArgumentException
+```
+
+Prefixes its message with `AS:`. Thrown when `as()` is called with:
+- An empty alias string.
+- An alias that is already used.
+- No preceding selected field to alias.
+- A field that was already aliased.
+
+---
+
+### `JoinException`
+
+```
+FQL\Exception\JoinException extends InvalidArgumentException
+```
+
+Prefixes its message with `JOIN:`. Thrown when:
+- A join is added with an empty alias.
+- `on()` is called without a preceding join.
+
+---
+
+### `OrderByException`
+
+```
+FQL\Exception\OrderByException extends InvalidArgumentException
+```
+
+Prefixes its message with `ORDER BY:`. Thrown when:
+- The same field is added to `orderBy()` twice.
+- `asc()` or `desc()` is called when no ordering has been set.
+
+---
+
+### `SortException`
+
+```
+FQL\Exception\SortException extends InvalidArgumentException
+```
+
+Prefixes its message with `ORDER BY:`. Thrown by the sort execution phase when an unexpected error occurs while sorting the result set.
+
+---
+
+### `CaseException`
+
+```
+FQL\Exception\CaseException extends InvalidArgumentException
+```
+
+Prefixes its message with `CASE:`. Thrown when the CASE expression builder methods are called out of order:
+- `whenCase()` without a preceding `case()`.
+- `elseCase()` without a preceding `case()` or `whenCase()`.
+- `elseCase()` called twice.
+- `endCase()` without a preceding `case()`.
+
+---
+
+## Runtime exceptions
+
+### `NotImplementedException`
+
+```
+FQL\Exception\NotImplementedException extends Exception
+```
+
+Thrown when a method or feature is not yet implemented. The constructor accepts a `callable` and generates a descriptive message like `"Static method FQL\Stream\Csv::string not implemented yet."`
+
+Currently thrown by `Csv::string()` (creating a CSV stream from a string is not supported).
+
+---
+
+## Exception hierarchy
+
+```
+\Exception
+├── FQL\Exception\Exception
+│   ├── FileNotFoundException
+│   ├── InvalidFormatException
+│   └── NotImplementedException
+├── \RuntimeException
+│   └── FileAlreadyExistsException
+├── \InvalidArgumentException
+│   └── FQL\Exception\InvalidArgumentException
+│       ├── FileQueryException
+│       ├── SelectException
+│       ├── AliasException
+│       ├── JoinException
+│       ├── OrderByException
+│       ├── SortException
+│       └── CaseException
+├── \LogicException
+│   └── QueryLogicException
+├── \UnexpectedValueException
+│   └── FQL\Exception\UnexpectedValueException
+└── \Exception (direct)
+    └── UnableOpenFileException
+```

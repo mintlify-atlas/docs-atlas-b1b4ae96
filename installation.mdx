@@ -1,0 +1,83 @@
+---
+title: "Installation"
+description: "Install FiQueLa via Composer and verify the required PHP extensions are available."
+---
+
+## Requirements
+
+- PHP **8.2** or higher
+- [Composer](https://getcomposer.org/)
+
+### Required PHP extensions
+
+The following extensions must be enabled in your PHP installation:
+
+| Extension | Purpose |
+|---|---|
+| `fileinfo` | File type detection |
+| `json` | JSON encoding and decoding |
+| `mbstring` | Multibyte string handling |
+| `xmlreader` | Streaming XML parsing |
+| `simplexml` | SimpleXML parsing |
+| `libxml` | Underlying XML support |
+| `iconv` | Character encoding conversion |
+
+These extensions ship with most PHP distributions and are typically enabled by default.
+
+## Install
+
+<Steps>
+  <Step title="Require the package">
+    Add FiQueLa to your project with Composer:
+
+    ```bash
+    composer require 1biot/fiquela
+    ```
+  </Step>
+
+  <Step title="Verify the installation">
+    Confirm the package is present in your `vendor/` directory and that autoloading is configured:
+
+    ```bash
+    composer show 1biot/fiquela
+    ```
+  </Step>
+
+  <Step title="Include the autoloader">
+    Require Composer's autoloader at the entry point of your script or application:
+
+    ```php
+    require __DIR__ . '/vendor/autoload.php';
+    ```
+  </Step>
+</Steps>
+
+## Optional format dependencies
+
+Several formats require additional Composer packages. Install only the ones you need:
+
+| Package | Formats enabled |
+|---|---|
+| `league/csv` | CSV |
+| `halaxa/json-machine` | JSON streaming (`JsonStream`, `NDJson`) |
+| `symfony/yaml` | YAML |
+| `nette/neon` | NEON |
+| `openspout/openspout` | XLSX and ODS |
+
+<Note>
+  As of the current release, `league/csv`, `halaxa/json-machine`, `symfony/yaml`, `nette/neon`, and `openspout/openspout` are bundled as required dependencies in `composer.json`, so they are installed automatically with `composer require 1biot/fiquela`. The table above reflects which package enables which format.
+</Note>
+
+## Optional dev dependency
+
+For debugging and benchmarking queries during development, install `tracy/tracy`:
+
+```bash
+composer require --dev tracy/tracy
+```
+
+This enables the `Query\Debugger` helper, which provides `inspectQuery`, `inspectSql`, `benchmarkQuery`, and `explain` output.
+
+<Tip>
+  `tracy/tracy` is only needed in development environments. Do not install it in production unless you have a specific use case.
+</Tip>

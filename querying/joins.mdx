@@ -1,0 +1,115 @@
+---
+title: "Joining data sources"
+description: "Join data from multiple files and formats in a single FiQueLa query using INNER, LEFT, RIGHT, and FULL joins."
+---
+
+FiQueLa can join data from different files — even across different formats — in a single query. Any file that FiQueLa can open can be used as a join source.
+
+<Warning>
+  Joins load all data from the joined sources into memory. For very large files, this can significantly increase memory usage. Plan accordingly when joining large datasets.
+</Warning>
+
+## Join types
+
+| Join type | Fluent method | FQL keyword | Description |
+|---|---|---|---|
+| Inner | `innerJoin()` / `join()` | `INNER JOIN` or `JOIN` | Returns rows that have matches in both sources. `join()` is an alias for `innerJoin()`. |
+| Left outer | `leftJoin()` | `LEFT JOIN` or `LEFT OUTER JOIN` | All rows from the left source; matched rows from the right |
+| Right outer | `rightJoin()` | `RIGHT JOIN` or `RIGHT OUTER JOIN` | All rows from the right source; matched rows from the left |
+| Full outer | `fullJoin()` | `FULL JOIN` or `FULL OUTER JOIN` | All rows from both sources; unmatched sides filled with `null` |
+
+## Fluent API
+
+Pass a query object as the join source along with an alias, then call `on()` to specify the join condition:
+
+```php
+use FQL\Enum\Operator;
+use FQL\Query;
+
+$users = Query\Provider::fromFileQuery('json(./examples/data/users.json).data.users');
+$orders = Query\Provider::fromFileQuery('xml(./examples/data/orders.xml).orders.order');
+
+$query = $users
+    ->select('id', 'name')
+    ->select('o.id')->as('orderId')
+    ->select('o.total_price')->as('totalPrice')
+    ->leftJoin($orders, 'o')
+        ->on('id', Operator::EQUAL, 'user_id')
+    ->groupBy('o.id')
+    ->orderBy('totalPrice')->desc();
+```
+
+### Multiple joins
+
+You can chain multiple join calls:
+
+```php
+$innerData = Query\Provider::fromFileQuery('xml(file.xml).SHOP.SHOPITEM');
+$leftData = Query\Provider::fromFileQuery('json(file.tmp).data.customers');
+
+$query = Query\Provider::fromFile('./path/to/file.csv')
+    ->innerJoin($innerData, 'p')
+        ->on('rightId', Operator::EQUAL, 'leftId')
+    ->leftJoin($leftData, 'c')
+        ->on('rightId', Operator::EQUAL, 'leftId');
+```
+
+## FQL syntax
+
+```sql
+FROM file_reference
+[
+    {[INNER] JOIN | {LEFT|RIGHT|FULL} [OUTER] JOIN}
+    file_reference
+    AS alias_reference
+    ON where_condition
+]
+```
+
+The alias is required for joined sources, and fields from joined sources are referenced with `alias.field` notation.
+
+```sql
+SELECT
+    id,
+    name,
+    o.id AS orderId,
+    o.total_price AS totalPrice
+FROM json(./examples/data/users.json).data.users
+LEFT JOIN
+    xml(./examples/data/orders.xml).orders.order AS o
+        ON id = user_id
+GROUP BY o.id
+ORDER BY totalPrice DESC
+```
+
+## Joining across file formats
+
+The join sources can use any format that FiQueLa supports. The left and right sources do not need to use the same format:
+
+```php
+// JSON users left-joined with XML orders
+$users = Query\Provider::fromFileQuery('json(users.json).data.users');
+$orders = Query\Provider::fromFileQuery('xml(orders.xml).orders.order');
+
+$query = $users
+    ->select('id', 'name')
+    ->select('o.total_price')->as('totalPrice')
+    ->leftJoin($orders, 'o')
+        ->on('id', Operator::EQUAL, 'user_id');
+```
+
+```sql
+-- Same query in FQL
+SELECT id, name, o.total_price AS totalPrice
+FROM json(users.json).data.users
+LEFT JOIN xml(orders.xml).orders.order AS o
+    ON id = user_id
+```
+
+## ON condition
+
+The `on()` method (fluent) and the `ON` clause (FQL) accept the same condition syntax as `where()`. The left-hand field refers to the left source; the right-hand value refers to the joined source.
+
+<Note>
+  Calling `on()` multiple times overwrites the previous condition. Define all join criteria in a single `on()` call, or use condition chaining through `and()`/`or()` after the `on()` call.
+</Note>

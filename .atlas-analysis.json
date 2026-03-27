@@ -1,0 +1,145 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "FiQueLa",
+  "projectDescription": "A lightweight PHP library for querying structured files (JSON, XML, CSV, XLS, YAML, NEON) using SQL-like syntax with support for stream processing, joins, aggregations, and advanced data functions.",
+  "theme": "luma",
+  "primaryColor": "#3B82F6",
+  "lightColor": "#EFF6FF",
+  "darkColor": "#1D4ED8",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/supported-formats",
+              "concepts/query-lifecycle",
+              "concepts/stream-vs-memory"
+            ]
+          },
+          {
+            "group": "Querying",
+            "pages": [
+              "querying/opening-files",
+              "querying/fluent-api",
+              "querying/fql-syntax",
+              "querying/conditions",
+              "querying/joins",
+              "querying/grouping-aggregations",
+              "querying/fetching-results"
+            ]
+          },
+          {
+            "group": "Functions Reference",
+            "pages": [
+              "functions/string-functions",
+              "functions/math-functions",
+              "functions/utils-functions",
+              "functions/aggregate-functions",
+              "functions/custom-functions"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/explain-analyze",
+              "advanced/union",
+              "advanced/export-into",
+              "advanced/debugging-benchmarking"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Classes",
+            "pages": [
+              "api/query-provider",
+              "api/stream-provider",
+              "api/results-provider"
+            ]
+          },
+          {
+            "group": "Enums & Types",
+            "pages": [
+              "api/enums",
+              "api/exceptions"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "SQL-like syntax (SELECT, WHERE, JOIN, GROUP BY, HAVING, ORDER BY, LIMIT) for querying structured files",
+    "Supports XML, JSON, NDJSON, CSV, XLS/XLSX, ODS, YAML, and NEON file formats",
+    "Stream-first processing for large files with low memory pressure",
+    "Fluent PHP API and FQL string syntax for building queries",
+    "Rich function library: string, math, date/time, array, hashing, and aggregate functions",
+    "INNER, LEFT, RIGHT, and FULL JOINs across different file formats and sources",
+    "EXPLAIN and EXPLAIN ANALYZE for query inspection and performance analysis",
+    "UNION and UNION ALL for combining results from multiple queries",
+    "INTO clause for exporting query results to files",
+    "DTO (Data Transfer Object) mapping for typed result handling",
+    "Custom function support via extensible base classes"
+  ],
+  "publicApiSurface": [
+    "FQL\\Query\\Provider::fromFile(string $path, ?Format $format): Query",
+    "FQL\\Query\\Provider::fromFileQuery(string $fileQuery): Query",
+    "FQL\\Query\\Provider::fql(string $fql): Query",
+    "FQL\\Stream\\Provider::fromFile(string $path, ?Format $format): Stream",
+    "FQL\\Stream\\Provider::fromString(string $data, Format $format): Stream",
+    "FQL\\Stream\\Xml::open(string $path): Xml",
+    "FQL\\Stream\\Json::open(string $path): Json",
+    "FQL\\Stream\\JsonStream::open(string $path): JsonStream",
+    "FQL\\Stream\\Csv::open(string $path): Csv",
+    "FQL\\Stream\\Yaml::open(string $path): Yaml",
+    "FQL\\Stream\\Neon::open(string $path): Neon",
+    "FQL\\Stream\\Xls::open(string $path): Xls",
+    "FQL\\Stream\\NDJson::open(string $path): NDJson",
+    "FQL\\Stream\\Dir::open(string $path): Dir",
+    "Query::select(string ...$fields): Query",
+    "Query::selectAll(): Query",
+    "Query::from(string $path): Query",
+    "Query::where(string $field, Operator $op, mixed $value): Query",
+    "Query::groupBy(string $field): Query",
+    "Query::orderBy(string $field, Sort $sort): Query",
+    "Query::limit(int $limit): Query",
+    "Query::offset(int $offset): Query",
+    "Query::innerJoin(Query $source, string $alias): Query",
+    "Query::leftJoin(Query $source, string $alias): Query",
+    "Query::union(Query $query): Query",
+    "Query::unionAll(Query $query): Query",
+    "Query::explain(): Query",
+    "Query::explainAnalyze(): Query",
+    "Query::execute(?string $resultsClass): ResultsProvider",
+    "ResultsProvider::fetchAll(?string $dto): \\Generator",
+    "ResultsProvider::fetch(?string $dto): mixed",
+    "ResultsProvider::fetchSingle(string $field): mixed",
+    "ResultsProvider::fetchNth(int|string $n, ?string $dto): \\Generator",
+    "ResultsProvider::exists(): bool",
+    "ResultsProvider::count(): int",
+    "ResultsProvider::into(string|FileQuery $target): void",
+    "FQL\\Query\\Debugger::start(): void",
+    "FQL\\Query\\Debugger::inspectQuery(Query $query): void",
+    "FQL\\Query\\Debugger::benchmarkQuery(Query $query, int $iterations): void",
+    "FQL\\Enum\\Operator",
+    "FQL\\Enum\\Sort",
+    "FQL\\Enum\\Format",
+    "FQL\\Enum\\Join",
+    "FQL\\Enum\\Type",
+    "FQL\\Enum\\LogicalOperator"
+  ]
+}

@@ -1,0 +1,171 @@
+---
+title: "EXPLAIN and EXPLAIN ANALYZE"
+description: "Inspect query execution plans and collect real per-phase metrics without a database query planner."
+---
+
+FiQueLa includes a built-in execution planner. Use `EXPLAIN` to see which pipeline stages will run and in what order, or use `EXPLAIN ANALYZE` to actually execute the query and capture real row counts, timings, and memory usage per stage.
+
+## Plan-only vs analysis mode
+
+| Mode | Runs query | Metrics collected |
+|---|---|---|
+| `EXPLAIN` | No | All metric columns are `null` |
+| `EXPLAIN ANALYZE` | Yes | Row counts, timings, memory per phase |
+
+Both modes return a flat table (stored in `Results\InMemory`) with the same eight columns.
+
+## Output columns
+
+| Column | Type | Description |
+|---|---|---|
+| `phase` | string | Pipeline stage name |
+| `rows_in` | int\|null | Rows entering the phase (`null` for plan-only) |
+| `rows_out` | int\|null | Rows leaving the phase (`null` for plan-only) |
+| `filtered` | int\|null | Rows removed (`rows_in − rows_out`; `null` for plan-only) |
+| `time_ms` | float\|null | Wall-clock time in milliseconds (`null` for plan-only) |
+| `duration_pct` | float\|null | Percentage of total query time (`null` for plan-only) |
+| `mem_peak_kb` | float\|null | Peak memory in KB at the end of the phase (`null` for plan-only) |
+| `note` | string | Human-readable description of the phase configuration |
+
+## Pipeline stage names
+
+| Phase | Description |
+|---|---|
+| `stream` | Reading rows from the source file |
+| `join` | Applying join conditions against another data source |
+| `where` | Filtering rows before aggregation |
+| `group` | Grouping rows and computing aggregates |
+| `having` | Filtering grouped results |
+| `sort` | Sorting the result set |
+| `limit` | Applying `LIMIT` / `OFFSET` |
+| `union` | Merging results from a union sub-query |
+
+## Union sub-phases
+
+When a query includes `UNION` or `UNION ALL`, each union branch reports its own sub-phases inside the explain output.
+
+**Single union** — phases are prefixed with `union_`:
+
+```
+union_stream → union_where → union (summary row)
+```
+
+**Multiple unions** — phases are indexed:
+
+```
+union_1_stream → union_1_where → union_1 (summary)
+union_2_stream → union_2_where → union_2 (summary)
+```
+
+## Usage
+
+<CodeGroup>
+
+```php Fluent API
+use FQL\Enum\Operator;
+use FQL\Query\Provider;
+
+// Plan only — no query execution
+$results = Provider::fromFileQuery('json(./data/products.json).data.products')
+    ->select('id', 'name')
+    ->where('price', Operator::GREATER_THAN, 100)
+    ->orderBy('name')
+    ->limit(10)
+    ->explain()
+    ->execute();
+
+foreach ($results->fetchAll() as $row) {
+    print_r($row);
+}
+```
+
+```sql FQL
+EXPLAIN
+SELECT id, name
+FROM json(./data/products.json).data.products
+WHERE price > 100
+ORDER BY name
+LIMIT 10
+```
+
+</CodeGroup>
+
+<CodeGroup>
+
+```php Fluent API
+use FQL\Enum\Operator;
+use FQL\Query\Provider;
+
+// Execute the query and collect real metrics
+$results = Provider::fromFileQuery('json(./data/products.json).data.products')
+    ->select('id', 'name')
+    ->where('price', Operator::GREATER_THAN, 100)
+    ->orderBy('name')
+    ->limit(10)
+    ->explainAnalyze()
+    ->execute();
+
+foreach ($results->fetchAll() as $row) {
+    print_r($row);
+}
+```
+
+```sql FQL
+EXPLAIN ANALYZE
+SELECT id, name
+FROM json(./data/products.json).data.products
+WHERE price > 100
+ORDER BY name
+LIMIT 10
+```
+
+</CodeGroup>
+
+## EXPLAIN ANALYZE with UNION
+
+The example below produces phases: `stream`, `where`, `limit`, `union_stream`, `union_where`, `union`.
+
+<CodeGroup>
+
+```php Fluent API
+use FQL\Enum\Operator;
+use FQL\Stream\Json;
+
+$stream = Json::open('./data/products.json');
+
+$query1 = $stream->query()
+    ->select('id')
+    ->from('data.products')
+    ->where('price', Operator::GREATER_THAN, 100);
+
+$query2 = $stream->query()
+    ->select('id')
+    ->from('data.products')
+    ->where('price', Operator::GREATER_THAN, 200);
+
+$results = $query1
+    ->limit(5)
+    ->unionAll($query2)
+    ->explainAnalyze()
+    ->execute();
+
+foreach ($results->fetchAll() as $row) {
+    print_r($row);
+}
+```
+
+```sql FQL
+EXPLAIN ANALYZE
+SELECT id FROM json(./data/products.json).data.products
+WHERE price > 100
+LIMIT 5
+UNION ALL
+SELECT id FROM json(./data/products.json).data.products
+WHERE price > 200
+```
+
+</CodeGroup>
+
+<Note>
+  `EXPLAIN` and `EXPLAIN ANALYZE` do not replace a database query planner — FiQueLa has no optimizer. The output reflects the fixed execution order defined by the [query lifecycle](/concepts/query-lifecycle).
+</Note>

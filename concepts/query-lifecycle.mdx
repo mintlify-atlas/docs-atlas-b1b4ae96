@@ -1,0 +1,121 @@
+---
+title: "Query lifecycle"
+description: "The ten-step execution order FiQueLa follows when processing a query — from loading the source to appending unions."
+---
+
+When you call `execute()`, FiQueLa processes the query through a fixed pipeline. Understanding this order helps you write correct queries and diagnose unexpected results.
+
+## Execution order
+
+<Steps>
+  <Step title="FROM and JOIN">
+    Data is loaded from the source specified in the `FROM` clause. If one or more `JOIN` clauses are present, the joined data is merged with the primary data at this point, before any filtering occurs.
+  </Step>
+  <Step title="WHERE">
+    Row-level filters are applied. Only rows matching all `WHERE` conditions pass through. Filtering happens against the raw data before any grouping or computed columns are available.
+  </Step>
+  <Step title="DISTINCT">
+    If `DISTINCT` is specified, duplicate rows are removed based on the selected columns. This step is skipped when `GROUP BY` is present, because grouping already eliminates duplicates.
+  </Step>
+  <Step title="GROUP BY">
+    Rows are grouped by the columns listed in `GROUP BY`. This prepares the data for aggregate functions such as `SUM`, `COUNT`, `AVG`, `MIN`, and `MAX`.
+  </Step>
+  <Step title="SELECT">
+    Column expressions, scalar functions, and aggregate functions defined in `SELECT` are evaluated. This is the only place where functions may be invoked.
+  </Step>
+  <Step title="HAVING">
+    Filters the output produced by `SELECT`. Primarily used to filter groups after aggregation — for example, keeping only groups where `SUM(sales) > 1000`. Reference computed columns by their alias.
+  </Step>
+  <Step title="ORDER BY">
+    Results are sorted by the specified columns or aliases. Supported sort directions are `ASC`, `DESC`, `SHUFFLE`, and `NATSORT`. Sorting requires all results to be loaded into memory.
+  </Step>
+  <Step title="EXCLUDE">
+    Listed columns are removed from the output rows. `EXCLUDE` runs after `SELECT` so you can compute a value in `SELECT`, use it in `HAVING` or `ORDER BY`, and then drop it from the final output.
+  </Step>
+  <Step title="LIMIT and OFFSET">
+    `OFFSET` skips the specified number of rows, then `LIMIT` caps the total number of rows returned. When no `ORDER BY` is present, FiQueLa applies the limit directly in the stream without buffering the full result set.
+  </Step>
+  <Step title="UNION / UNION ALL">
+    Each `UNION` or `UNION ALL` subquery runs its own independent pipeline (FROM → WHERE → SELECT → …) and its results are appended to the main result. `UNION` removes duplicate rows using hash-based deduplication; `UNION ALL` keeps all rows. All combined queries must select the same number of columns.
+  </Step>
+</Steps>
+
+<Warning>
+Functions can only be used in the `SELECT` clause. To filter or sort by a function's result, assign it an alias in `SELECT` and reference that alias in `HAVING` or `ORDER BY`.
+
+```sql
+SELECT price, ROUND(price, 2) AS rounded_price
+FROM csv(products.csv).*
+HAVING rounded_price > 100
+ORDER BY rounded_price DESC
+```
+</Warning>
+
+## EXPLAIN and EXPLAIN ANALYZE
+
+You can inspect the query plan without running the full query, or run it and collect real metrics.
+
+**`EXPLAIN`** — returns a plan-only table with `null` metrics. Use it to understand which phases will run and in what order before executing.
+
+**`EXPLAIN ANALYZE`** — executes the query and records real row counts, timing (`time_ms`, `duration_pct`), and peak memory usage (`mem_peak_kb`) for each phase.
+
+Phases reported correspond directly to the lifecycle stages above: `stream`, `join`, `where`, `group`, `having`, `sort`, `limit`. When unions are present, each branch reports its own sub-phases (e.g. `union_stream`, `union_where`) followed by a summary row (`union`). Multiple unions are indexed: `union_1_stream`, `union_2_stream`, and so on.
+
+```php
+use FQL\Query;
+
+$query = Query\Provider::fromFileQuery('xml(customers.xml).customers.customer')
+    ->select('name, SUM(sales)')->as('total_sales')
+    ->from('customers.customer')
+    ->where('age', \FQL\Enum\Operator::GREATER_THAN, 30)
+    ->groupBy('name')
+    ->having('total_sales', \FQL\Enum\Operator::GREATER_THAN, 1000)
+    ->orderBy('total_sales')->desc()
+    ->limit(10);
+
+// Plan only — no execution
+$plan = $query->execute()->explain();
+
+// Plan with real metrics
+$analysis = $query->execute()->explain(true);
+```
+
+See [EXPLAIN & benchmarking](/advanced/explain-analyze) for full output format details.
+
+## Worked example
+
+The following query demonstrates every phase of the lifecycle:
+
+```sql
+SELECT
+    name,
+    SUM(sales) AS total_sales,
+    ROUND(total_sales, 2) AS rounded_sales
+EXCLUDE total_sales
+FROM xml(customers.xml).customers.customer
+WHERE age > 30
+GROUP BY name
+HAVING total_sales > 1000
+ORDER BY total_sales DESC
+LIMIT 10
+UNION ALL
+SELECT
+    name,
+    SUM(sales) AS total_sales,
+    ROUND(total_sales, 2) AS rounded_sales
+FROM xml(partners.xml).partners.partner
+WHERE age > 25
+GROUP BY name;
+```
+
+**Execution order for the main query:**
+
+1. **FROM** — load `customers.xml`, navigate to `customers.customer`
+2. **WHERE** — keep rows where `age > 30`
+3. **GROUP BY** — group rows by `name`
+4. **SELECT** — compute `SUM(sales)` per group and `ROUND(total_sales, 2)`
+5. **HAVING** — keep groups where `total_sales > 1000`
+6. **ORDER BY** — sort by `total_sales` descending (loads all results into memory)
+7. **EXCLUDE** — drop the `total_sales` column from output rows
+8. **LIMIT** — return the top 10 rows
+9. **UNION ALL** — execute the partner subquery independently and append all its rows

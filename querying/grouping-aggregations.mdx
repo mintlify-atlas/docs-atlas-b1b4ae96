@@ -1,0 +1,144 @@
+---
+title: "Grouping and aggregations"
+description: "Group rows with groupBy(), apply aggregate functions like COUNT, SUM, AVG, MIN, MAX, and GROUP_CONCAT, and filter grouped results with HAVING."
+---
+
+FiQueLa supports SQL-style grouping and aggregation. Use `groupBy()` to collapse rows into groups, aggregate functions to compute group-level summaries, and `having()` to filter the aggregated results.
+
+## WHERE vs HAVING
+
+The key distinction:
+
+- **`WHERE`** — filters rows **before** grouping. Only rows that pass the filter are included in the groups.
+- **`HAVING`** — filters groups **after** aggregation. Conditions can reference aggregate aliases.
+
+```php
+use FQL\Enum\Operator;
+
+$query->count('id')->as('total')
+    ->sum('price')->as('revenue')
+    ->where('active', Operator::EQUAL, true)     // pre-aggregation filter
+    ->groupBy('category')
+    ->having('total', Operator::GREATER_THAN, 5); // post-aggregation filter
+```
+
+## groupBy()
+
+Group rows by one or more fields. Dot notation is supported for nested fields:
+
+```php
+$query->groupBy('category.id');
+$query->groupBy('brand.code', 'category.id');
+```
+
+<Note>
+  `DISTINCT` and `GROUP BY` cannot be used together. Attempting to combine them throws a `QueryLogicException`.
+</Note>
+
+## Aggregate functions
+
+| Fluent method | FQL function | Description |
+|---|---|---|
+| `count($field, $distinct)` | `COUNT(field)` / `COUNT(DISTINCT field)` | Count rows |
+| `sum($field, $distinct)` | `SUM(field)` / `SUM(DISTINCT field)` | Sum of values |
+| `avg($field)` | `AVG(field)` | Average value |
+| `min($field, $distinct)` | `MIN(field)` / `MIN(DISTINCT field)` | Minimum value |
+| `max($field, $distinct)` | `MAX(field)` / `MAX(DISTINCT field)` | Maximum value |
+| `groupConcat($field, $sep, $distinct)` | `GROUP_CONCAT(field, sep)` / `GROUP_CONCAT(DISTINCT field, sep)` | Concatenate values |
+
+All aggregate methods accept an optional `bool $distinct` parameter (except `avg()`). `groupConcat()` also accepts a separator string.
+
+## Examples
+
+<CodeGroup>
+
+```php Fluent API
+use FQL\Enum\Operator;
+
+$query->select('category.id')->as('category')
+    ->count('id')->as('total')
+    ->sum('price')->as('revenue')
+    ->avg('price')->as('avgPrice')
+    ->min('price')->as('minPrice')
+    ->max('price')->as('maxPrice')
+    ->groupConcat('name')->as('names')
+    ->groupBy('category.id')
+    ->having('total', Operator::GREATER_THAN, 10)
+    ->or('revenue', Operator::GREATER_THAN, 1000);
+```
+
+```sql FQL string
+SELECT
+    category.id AS category,
+    COUNT(id) AS total,
+    SUM(price) AS revenue,
+    AVG(price) AS avgPrice,
+    MIN(price) AS minPrice,
+    MAX(price) AS maxPrice,
+    GROUP_CONCAT(name) AS names
+FROM json(products.json).data.products
+GROUP BY category.id
+HAVING total > 10
+    OR revenue > 1000
+```
+
+</CodeGroup>
+
+### DISTINCT in aggregates
+
+Pass `true` as the last argument to count, sum, min, max, or groupConcat only unique values:
+
+<CodeGroup>
+
+```php Fluent API
+$query->count('id', true)->as('uniqueCount')
+    ->sum('price', true)->as('uniqueRevenue')
+    ->min('price', true)->as('uniqueMin')
+    ->max('price', true)->as('uniqueMax')
+    ->groupConcat('name', ',', true)->as('uniqueNames');
+```
+
+```sql FQL string
+SELECT
+    COUNT(DISTINCT id) AS uniqueCount,
+    SUM(DISTINCT price) AS uniqueRevenue,
+    MIN(DISTINCT price) AS uniqueMin,
+    MAX(DISTINCT price) AS uniqueMax,
+    GROUP_CONCAT(DISTINCT name, ",") AS uniqueNames
+FROM json(products.json).data.products
+```
+
+</CodeGroup>
+
+## Real-world example
+
+This example comes from the XML example — grouping customers by age and computing average spending:
+
+```php
+use FQL\Stream;
+use FQL\Query;
+
+$xml = Stream\Provider::fromFile('./examples/data/customers.xml');
+
+$ageVsSpent = $xml->query()
+    ->select('age.value')->as('customerAge')
+    ->avg('spent.value')->as('avgSpent')
+    ->round('avgSpent', 2)->as('avgSpentRounded')
+    ->from('customers.customer')
+    ->groupBy('age.value')
+    ->orderBy('avgSpent')->desc()
+    ->limit(10);
+```
+
+Equivalent FQL:
+
+```sql
+SELECT
+    age.value AS customerAge,
+    AVG(spent.value) AS avgSpent,
+    ROUND(avgSpent, 2) AS avgSpentRounded
+FROM xml(./examples/data/customers.xml).customers.customer
+GROUP BY age.value
+ORDER BY avgSpent DESC
+LIMIT 10
+```

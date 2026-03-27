@@ -1,0 +1,307 @@
+---
+title: "ResultsProvider"
+description: "The result set returned by Query::execute(). Provides iteration, fetching, aggregation, and export methods."
+---
+
+## Overview
+
+**Namespace:** `FQL\Results`
+
+`ResultsProvider` is the abstract base class for result sets returned by `Query::execute()`. It implements `IteratorAggregate` and provides methods to iterate, fetch individual rows, perform aggregate calculations, and export results to a file.
+
+You never instantiate `ResultsProvider` directly — you receive it from `execute()`.
+
+```php
+use FQL\Query\Provider;
+
+$results = Provider::fromFile('orders.json')
+    ->select('id', 'total', 'status')
+    ->where('status', \FQL\Enum\Operator::EQUAL, 'paid')
+    ->execute();
+
+echo $results->count();      // 42
+echo $results->sum('total'); // 18340.00
+```
+
+---
+
+## Subtypes
+
+`Query::execute()` returns one of two concrete implementations depending on query complexity:
+
+| Class | When used |
+|-------|-----------|
+| `Results\Stream` | Simple queries without joins or sorting. Processes data lazily as a generator — low memory usage. |
+| `Results\InMemory` | Queries with joins, sorting, or `DISTINCT`. Loads all rows into an `ArrayIterator` before returning. |
+
+<Note>
+You can force a specific mode by passing the class name to `execute()`:
+
+```php
+use FQL\Results\InMemory;
+
+$results = $query->execute(InMemory::class);
+```
+</Note>
+
+Both classes expose the same `ResultsProvider` interface described below.
+
+---
+
+## Iteration
+
+### `getIterator()`
+
+Returns a `Traversable` over all result rows. Each row is an associative array.
+
+```php
+public function getIterator(): \Traversable
+```
+
+`ResultsProvider` implements `IteratorAggregate`, so you can use it in a `foreach` loop directly.
+
+```php
+foreach ($results as $row) {
+    echo $row['name'];
+}
+```
+
+---
+
+## Fetching rows
+
+### `fetchAll()`
+
+Yield all rows as a `Generator`. Optionally hydrate each row into a DTO class.
+
+```php
+public function fetchAll(?string $dto = null): \Generator
+```
+
+<ParamField path="dto" type="string | null">
+  Fully qualified class name of a DTO. When provided, each row is mapped to an instance of that class using constructor parameters or public properties.
+</ParamField>
+
+<ResponseField name="returns" type="Generator">
+  Yields associative arrays (or DTO objects when `$dto` is set).
+</ResponseField>
+
+```php
+foreach ($results->fetchAll() as $row) {
+    echo $row['id'] . ': ' . $row['name'];
+}
+
+// Hydrate into a DTO
+class ProductDto {
+    public function __construct(
+        public readonly int $id,
+        public readonly string $name,
+        public readonly float $price,
+    ) {}
+}
+
+foreach ($results->fetchAll(ProductDto::class) as $product) {
+    echo $product->name;
+}
+```
+
+---
+
+### `fetch()`
+
+Return the first row only, or `null` if the result set is empty.
+
+```php
+public function fetch(?string $dto = null): mixed
+```
+
+<ParamField path="dto" type="string | null">
+  Optional DTO class name for hydration.
+</ParamField>
+
+<ResponseField name="returns" type="array | object | null">
+  The first row as an associative array, a DTO object, or `null`.
+</ResponseField>
+
+```php
+$product = $results->fetch();
+if ($product !== null) {
+    echo $product['name'];
+}
+```
+
+---
+
+### `fetchSingle()`
+
+Return a single field value from the first row.
+
+```php
+public function fetchSingle(string $field): mixed
+```
+
+<ParamField path="field" type="string" required>
+  Field name, including dot-notation for nested fields (e.g. `address.city`).
+</ParamField>
+
+<ResponseField name="returns" type="mixed">
+  The value of the field, or `null` if the row or field does not exist.
+</ResponseField>
+
+```php
+$name = $results->fetchSingle('name');
+$city = $results->fetchSingle('address.city');
+```
+
+---
+
+### `fetchNth()`
+
+Yield every nth row, or every even/odd row.
+
+```php
+public function fetchNth(int|string $n, ?string $dto = null): \Generator
+```
+
+<ParamField path="n" type="int | 'even' | 'odd'" required>
+  - Integer: yield every nth row (1-indexed count).
+  - `'even'`: yield rows at even positions (0-indexed: 0, 2, 4…).
+  - `'odd'`: yield rows at odd positions (0-indexed: 1, 3, 5…).
+</ParamField>
+
+<ParamField path="dto" type="string | null">
+  Optional DTO class name.
+</ParamField>
+
+**Throws:** `InvalidArgumentException` for invalid `$n` values.
+
+```php
+// Every 3rd row
+foreach ($results->fetchNth(3) as $row) { ... }
+
+// Even-positioned rows
+foreach ($results->fetchNth('even') as $row) { ... }
+```
+
+---
+
+### `exists()`
+
+Return `true` if the result set contains at least one row.
+
+```php
+public function exists(): bool
+```
+
+```php
+if ($results->exists()) {
+    echo 'Found records';
+}
+```
+
+---
+
+## Counting
+
+### `count()`
+
+Return the total number of rows in the result set.
+
+```php
+public function count(): int
+```
+
+<Note>
+`Results\Stream` caches the count internally after the first call, so repeated `count()` calls do not re-read the file.
+</Note>
+
+```php
+echo $results->count(); // e.g. 1024
+```
+
+---
+
+## Aggregation
+
+These methods iterate the result set and compute aggregate values. For `Results\Stream`, computed values are cached so that repeated calls do not re-read the stream.
+
+### `sum()`
+
+```php
+public function sum(string $field): float
+```
+
+<ParamField path="field" type="string" required>Field name to sum. Non-numeric values are treated as `0`.</ParamField>
+
+### `avg()`
+
+```php
+public function avg(string $field, int $decimalPlaces = 2): float
+```
+
+<ParamField path="field" type="string" required>Field name to average.</ParamField>
+<ParamField path="decimalPlaces" type="int">Number of decimal places in the result (default `2`).</ParamField>
+
+### `min()`
+
+```php
+public function min(string $field): float
+```
+
+<ParamField path="field" type="string" required>Field name to find the minimum of.</ParamField>
+
+### `max()`
+
+```php
+public function max(string $field): float
+```
+
+<ParamField path="field" type="string" required>Field name to find the maximum of.</ParamField>
+
+```php
+$total   = $results->sum('price');        // 4850.00
+$average = $results->avg('price', 2);     // 121.25
+$lowest  = $results->min('price');        // 9.99
+$highest = $results->max('price');        // 499.00
+```
+
+---
+
+## Exporting
+
+### `into()`
+
+Write all result rows to a file. The output format is determined by the file extension in the FileQuery string.
+
+```php
+public function into(string|FileQuery $target): ?string
+```
+
+<ParamField path="target" type="string | FileQuery" required>
+  A file path string (e.g. `output/report.csv`) or a `FileQuery` object. The directory is created automatically if it does not exist.
+</ParamField>
+
+<ResponseField name="returns" type="string | null">
+  The resolved output file path, or `null` when running under `EXPLAIN ANALYZE` mode.
+</ResponseField>
+
+**Throws:** `FileQueryException`, `InvalidFormatException`, `InvalidArgumentException`
+
+```php
+// Export to JSON
+$results->into('json(output/filtered.json).root.items');
+
+// Export to CSV
+$results->into('csv(output/report.csv)');
+
+// Export to XML
+$results->into('xml(output/report.xml).ROOT.ROW');
+
+// Using a FileQuery object
+use FQL\Query\FileQuery;
+$results->into(new FileQuery('csv(exports/products.csv)'));
+```
+
+<Warning>
+Calling aggregation methods (`sum`, `avg`, etc.) before `into()` on a `Results\Stream` will exhaust the generator. Call `into()` first, or use `Results\InMemory`.
+</Warning>

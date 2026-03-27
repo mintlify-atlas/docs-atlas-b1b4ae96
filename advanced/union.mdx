@@ -1,0 +1,142 @@
+---
+title: "UNION and UNION ALL"
+description: "Combine results from multiple queries with UNION (deduplicates) or UNION ALL (keeps all rows)."
+---
+
+`UNION` and `UNION ALL` let you merge the results of two or more independent queries into a single result set. Both queries can target different files, different paths within the same file, or different filter conditions.
+
+## UNION vs UNION ALL
+
+| Clause | Duplicate rows |
+|---|---|
+| `UNION` | Removed (hash-based deduplication) |
+| `UNION ALL` | Kept |
+
+## Column count requirement
+
+The number of selected columns must match across all combined queries. If they do not match, FiQueLa throws a `QueryLogicException`.
+
+```php
+// These column counts must be equal
+$query1->select('name', 'price');   // 2 columns
+$query2->select('name', 'price');   // 2 columns — OK
+```
+
+Queries using `SELECT *` skip this validation.
+
+## Basic usage
+
+<CodeGroup>
+
+```php Fluent API
+use FQL\Enum\Operator;
+use FQL\Stream\Json;
+
+$stream = Json::open('./data/products.json');
+
+$cheapProducts = $stream->query()
+    ->select('id', 'name', 'price')
+    ->from('data.products')
+    ->where('price', Operator::LESS_THAN_OR_EQUAL, 100);
+
+$expensiveProducts = $stream->query()
+    ->select('id', 'name', 'price')
+    ->from('data.products')
+    ->where('price', Operator::GREATER_THAN_OR_EQUAL, 400);
+
+// UNION — removes duplicate rows
+$results = $cheapProducts->union($expensiveProducts)->execute();
+
+// UNION ALL — keeps all rows including duplicates
+$results = $cheapProducts->unionAll($expensiveProducts)->execute();
+```
+
+```sql FQL
+-- UNION (removes duplicates)
+SELECT id, name, price
+FROM json(./data/products.json).data.products
+WHERE price <= 100
+UNION
+SELECT id, name, price
+FROM json(./data/products.json).data.products
+WHERE price >= 400
+
+-- UNION ALL (keeps duplicates)
+SELECT id, name, price
+FROM json(./data/products.json).data.products
+WHERE price >= 300
+UNION ALL
+SELECT id, name, price
+FROM json(./data/products.json).data.products
+WHERE price >= 300
+```
+
+</CodeGroup>
+
+## Chaining multiple unions
+
+You can chain as many unions as needed. Each union executes its own independent pipeline.
+
+<CodeGroup>
+
+```php Fluent API
+use FQL\Enum\Operator;
+use FQL\Stream\Json;
+
+$stream = Json::open('./data/products.json');
+
+$q1 = $stream->query()
+    ->select('id', 'name', 'price')
+    ->from('data.products')
+    ->where('id', Operator::EQUAL, 1);
+
+$q2 = $stream->query()
+    ->select('id', 'name', 'price')
+    ->from('data.products')
+    ->where('id', Operator::EQUAL, 3);
+
+$q3 = $stream->query()
+    ->select('id', 'name', 'price')
+    ->from('data.products')
+    ->where('id', Operator::EQUAL, 5);
+
+$results = $q1
+    ->union($q2)
+    ->unionAll($q3)
+    ->execute();
+```
+
+```sql FQL
+SELECT name, price FROM xml(./data/feed1.xml).SHOP.ITEM
+WHERE price > 100
+UNION
+SELECT name, price FROM xml(./data/feed2.xml).SHOP.ITEM
+WHERE price > 200
+UNION ALL
+SELECT name, price FROM xml(./data/feed3.xml).SHOP.ITEM
+```
+
+</CodeGroup>
+
+## How UNION interacts with EXPLAIN
+
+When you run `EXPLAIN` or `EXPLAIN ANALYZE` on a query that includes a union, each union branch reports its own sub-phases in the output.
+
+**Single union** produces phases like:
+
+```
+stream → where → union_stream → union_where → union
+```
+
+**Multiple unions** index each branch:
+
+```
+stream → where → union_1_stream → union_1_where → union_1
+                 union_2_stream → union_2_where → union_2
+```
+
+See [EXPLAIN and EXPLAIN ANALYZE](/advanced/explain-analyze) for the full column reference.
+
+<Note>
+  Each union sub-query executes its own full pipeline — `FROM` → `WHERE` → `GROUP BY` → `SELECT` → etc. Clauses like `ORDER BY` and `LIMIT` on the main query apply to the final merged result, not to individual branches.
+</Note>

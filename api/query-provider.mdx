@@ -1,0 +1,656 @@
+---
+title: "Query\\Provider"
+description: "Static factory methods for opening files and parsing FQL strings into a Query instance, plus the full fluent query API."
+---
+
+## Overview
+
+**Namespace:** `FQL\Query`
+
+`Query\Provider` is the main entry point for building queries in FiQueLa. Its static methods open a data source and return a `Query` object. The `Query` object exposes a fluent API that mirrors SQL — you chain method calls to define SELECT, FROM, WHERE, JOIN, GROUP BY, ORDER BY, LIMIT, and more, then call `execute()` to get results.
+
+```php
+use FQL\Query\Provider;
+use FQL\Enum\Operator;
+
+$results = Provider::fromFile('products.json')
+    ->select('id', 'name', 'price')
+    ->where('price', Operator::GREATER_THAN, 100)
+    ->orderBy('price')->desc()
+    ->limit(10)
+    ->execute();
+
+foreach ($results->fetchAll() as $row) {
+    echo $row['name'];
+}
+```
+
+---
+
+## Static factory methods
+
+### `fromFile()`
+
+Open a file and return a `Query` ready to run against it. The format is detected automatically from the file extension unless you supply `$format` explicitly.
+
+```php
+public static function fromFile(string $path, ?Enum\Format $format = null): Interface\Query
+```
+
+<ParamField path="path" type="string" required>
+  Filesystem path to the data file.
+</ParamField>
+
+<ParamField path="format" type="FQL\Enum\Format | null">
+  Force a specific format. When `null` the format is inferred from the file extension.
+</ParamField>
+
+<ResponseField name="returns" type="FQL\Query\Query">
+  A `Query` instance bound to the opened stream.
+</ResponseField>
+
+**Throws:** `FileNotFoundException`, `InvalidFormatException`
+
+```php
+use FQL\Query\Provider;
+use FQL\Enum\Format;
+
+// Auto-detect format
+$query = Provider::fromFile('/data/users.csv');
+
+// Force format
+$query = Provider::fromFile('/data/export', Format::JSON);
+```
+
+---
+
+### `fromFileQuery()`
+
+Parse a FileQuery string — a compact expression encoding the format, file path, optional parameters, and data path — and return a `Query`.
+
+```php
+public static function fromFileQuery(string $fileQuery): Interface\Query
+```
+
+The FileQuery string follows the syntax: `format(pathToFile[, params]).path.to.data`
+
+<ParamField path="fileQuery" type="string" required>
+  A FileQuery string such as `xml(feed.xml).SHOP.ITEM` or `csv(data.csv, "windows-1250", ";").*`.
+</ParamField>
+
+<ResponseField name="returns" type="FQL\Query\Query">
+  A `Query` instance, optionally pre-populated with a `FROM` clause if the query segment was present.
+</ResponseField>
+
+**Throws:** `FileNotFoundException`, `InvalidFormatException`
+
+```php
+use FQL\Query\Provider;
+
+// XML with dot-path to data
+$query = Provider::fromFileQuery('xml(catalog.xml).catalog.items.item');
+
+// CSV with custom encoding and delimiter (positional params)
+$query = Provider::fromFileQuery('csv(orders.csv, "windows-1250", ";").*');
+
+// CSV with named params
+$query = Provider::fromFileQuery('csv(orders.csv, encoding: "windows-1250", delimiter: ";").*');
+
+// JSON with data path
+$query = Provider::fromFileQuery('json(users.json).data.users');
+```
+
+---
+
+### `fql()`
+
+Parse a full FQL (File Query Language) SQL-like string and return a `Query` object without executing it. Useful when queries are stored as strings or generated programmatically.
+
+```php
+public static function fql(string $fql): Interface\Query
+```
+
+<ParamField path="fql" type="string" required>
+  A complete FQL statement, e.g. `SELECT id, name FROM data/users.json WHERE active = 1`.
+</ParamField>
+
+<ResponseField name="returns" type="FQL\Query\Query">
+  A configured `Query` instance that can be further modified before calling `execute()`.
+</ResponseField>
+
+**Throws:** `InvalidFormatException`, `FileNotFoundException`
+
+```php
+use FQL\Query\Provider;
+
+$query = Provider::fql("
+    SELECT id, name, email
+    FROM data/users.json
+    WHERE active = 1
+    ORDER BY name ASC
+    LIMIT 50
+");
+
+$results = $query->execute();
+```
+
+---
+
+## Query fluent API
+
+All factory methods return a `FQL\Query\Query` object. Every method below returns `$this` (or `Interface\Query`) so calls can be chained.
+
+### SELECT
+
+#### `select()`
+
+Specify one or more fields to return. Accepts a comma-separated string or multiple arguments.
+
+```php
+public function select(string ...$fields): Interface\Query
+```
+
+**Throws:** `SelectException` if a field is selected twice.
+
+```php
+$query->select('id', 'name', 'price');
+$query->select('id, name, price'); // also valid
+```
+
+#### `selectAll()`
+
+Select all fields (equivalent to `SELECT *`).
+
+```php
+public function selectAll(): Interface\Query
+```
+
+#### `distinct()`
+
+Eliminate duplicate rows from the result set.
+
+```php
+public function distinct(bool $distinct = true): Interface\Query
+```
+
+**Throws:** `QueryLogicException` when combined with `groupBy()`.
+
+#### `as()`
+
+Alias the most recently selected field.
+
+```php
+public function as(string $alias): Interface\Query
+```
+
+**Throws:** `AliasException` if the alias is empty, already used, or there is no preceding field.
+
+```php
+$query->select('total_price')->as('price');
+```
+
+#### `exclude()`
+
+Remove one or more fields from the output even if they were included by `selectAll()`.
+
+```php
+public function exclude(string ...$fields): Interface\Query
+```
+
+```php
+$query->selectAll()->exclude('password', 'internal_id');
+```
+
+#### Built-in SELECT functions
+
+The following methods add a computed column to the SELECT list. Each returns `Interface\Query` and can be followed by `->as('alias')`.
+
+<AccordionGroup>
+  <Accordion title="String functions">
+
+| Method | Description |
+|--------|-------------|
+| `concat(string ...$fields)` | Concatenate multiple fields |
+| `concatWithSeparator(string $separator, string ...$fields)` | Concatenate with a separator |
+| `lower(string $field)` | Convert to lowercase |
+| `upper(string $field)` | Convert to uppercase |
+| `reverse(string $field)` | Reverse a string |
+| `replace(string $field, string $search, string $replace)` | Find and replace |
+| `substring(string $field, int $start, ?int $length)` | Extract substring |
+| `locate(string $substring, string $field, ?int $position)` | Find position of substring |
+| `leftPad(string $field, int $length, string $padString)` | Pad left to given length |
+| `rightPad(string $field, int $length, string $padString)` | Pad right to given length |
+| `explode(string $field, string $sep)` | Split string into array |
+| `implode(string $field, string $sep)` | Join array into string |
+| `fromBase64(string $field)` | Decode Base64 |
+| `toBase64(string $field)` | Encode to Base64 |
+| `randomString(int $length)` | Generate random string |
+
+  </Accordion>
+  <Accordion title="Math functions">
+
+| Method | Description |
+|--------|-------------|
+| `round(string $field, int $precision)` | Round a number |
+| `ceil(string $field)` | Round up |
+| `floor(string $field)` | Round down |
+| `modulo(string $field, int $divisor)` | Modulo operation |
+| `add(string ...$fields)` | Sum of fields |
+| `subtract(string ...$fields)` | Subtraction |
+| `multiply(string ...$fields)` | Multiplication |
+| `divide(string ...$fields)` | Division |
+
+  </Accordion>
+  <Accordion title="Aggregate functions">
+
+| Method | Description |
+|--------|-------------|
+| `count(?string $field, bool $distinct)` | Count rows or distinct values |
+| `sum(string $field, bool $distinct)` | Sum of numeric field |
+| `avg(string $field)` | Average |
+| `min(string $field, bool $distinct)` | Minimum value |
+| `max(string $field, bool $distinct)` | Maximum value |
+| `groupConcat(string $field, string $sep, bool $distinct)` | Concatenate grouped values |
+
+  </Accordion>
+  <Accordion title="Date functions">
+
+| Method | Description |
+|--------|-------------|
+| `strToDate(string $field, string $format)` | Parse string to date |
+| `formatDate(string $field, string $format)` | Format a date field |
+| `fromUnixTime(string $field, string $format)` | Convert Unix timestamp |
+| `currentDate(bool $numeric)` | Current date |
+| `currentTime(bool $numeric)` | Current time |
+| `currentTimestamp()` | Current date and time |
+| `now(bool $numeric)` | Current date and time as formatted string (or `YmdHis` integer when `$numeric = true`) |
+| `dateDiff(string $field1, string $field2)` | Difference between dates |
+| `dateAdd(string $field, string $interval)` | Add interval to date |
+| `dateSub(string $field, string $interval)` | Subtract interval from date |
+| `year(string $field)` | Extract year |
+| `month(string $field)` | Extract month |
+| `day(string $field)` | Extract day |
+
+  </Accordion>
+  <Accordion title="Utility functions">
+
+| Method | Description |
+|--------|-------------|
+| `cast(string $field, Enum\Type $as)` | Cast field to a type |
+| `coalesce(string ...$fields)` | First non-null value |
+| `coalesceNotEmpty(string ...$fields)` | First non-empty value |
+| `length(string $field)` | Length of string or array |
+| `sha1(string $field)` | SHA-1 hash |
+| `md5(string $field)` | MD5 hash |
+| `uuid()` | Generate UUID |
+| `randomBytes(int $length)` | Generate random bytes |
+| `arrayCombine(string $keys, string $values)` | Combine two array fields |
+| `arrayMerge(string $field1, string $field2)` | Merge two array fields |
+| `arrayFilter(string $field)` | Filter falsy values from array |
+| `arraySearch(string $field, string $value)` | Search value in array field |
+| `colSplit(string $field, ?string $format, ?string $keyField)` | Split column into sub-structure |
+| `fulltext(array $fields, string $query)` | Fulltext relevance score |
+| `matchAgainst(array $fields, string $query, ?Enum\Fulltext $mode)` | Alias for `fulltext()` |
+
+  </Accordion>
+  <Accordion title="Conditional functions">
+
+| Method | Description |
+|--------|-------------|
+| `if(string $condition, string $true, string $false)` | Inline IF expression |
+| `ifNull(string $field, string $trueStatement)` | Return value when field is null |
+| `isNull(string $field)` | Return bool indicating null |
+| `case()` | Begin a CASE expression |
+| `whenCase(string $condition, string $then)` | Add WHEN branch |
+| `elseCase(string $default)` | Add ELSE branch |
+| `endCase()` | Finalize CASE expression |
+
+  </Accordion>
+</AccordionGroup>
+
+#### `custom()`
+
+Inject a custom function object into the SELECT list.
+
+```php
+public function custom(
+    Core\MultipleFieldsFunction|Core\NoFieldFunction|Core\SingleFieldFunction $function
+): Interface\Query
+```
+
+```php
+use FQL\Functions\Core\SingleFieldFunction;
+
+class TitleCase extends SingleFieldFunction {
+    public function __invoke(array $item, array $resultItem): mixed {
+        $value = (string) $this->getFieldValue($this->field, $item, $resultItem);
+        return ucwords(strtolower($value));
+    }
+
+    public function __toString(): string {
+        return sprintf('TITLE_CASE(%s)', $this->field);
+    }
+}
+
+$query->custom(new TitleCase('name'))->as('title_name');
+```
+
+---
+
+### FROM
+
+#### `from()`
+
+Set the path inside the data structure to iterate from. For nested data (XML, JSON) this selects the sub-node that contains rows.
+
+```php
+public function from(string $query): Interface\Query
+```
+
+```php
+// For XML like <catalog><items><item>...
+$query->from('catalog.items.item');
+
+// For JSON like {"data": {"users": [...]}}
+$query->from('data.users');
+```
+
+---
+
+### WHERE / conditions
+
+#### `where()`
+
+Add the first (or primary) filter condition.
+
+```php
+public function where(
+    string $key,
+    Enum\Operator $operator,
+    array|float|int|string|Enum\Type $value
+): Interface\Query
+```
+
+#### `and()` / `or()` / `xor()`
+
+Chain additional conditions with the respective logical operator.
+
+```php
+public function and(string $key, Enum\Operator $operator, mixed $value): Interface\Query
+public function or(string $key, Enum\Operator $operator, mixed $value): Interface\Query
+public function xor(string $key, Enum\Operator $operator, mixed $value): Interface\Query
+```
+
+#### `whereGroup()` / `andGroup()` / `orGroup()` / `havingGroup()`
+
+Open a new grouped sub-condition. `havingGroup()` starts a group in the HAVING context.
+
+```php
+public function whereGroup(): Interface\Query
+public function andGroup(): Interface\Query
+public function orGroup(): Interface\Query
+public function havingGroup(): Interface\Query
+```
+
+#### `endGroup()`
+
+Close the current condition group.
+
+```php
+public function endGroup(): Interface\Query
+```
+
+```php
+use FQL\Enum\Operator;
+
+$query
+    ->where('status', Operator::EQUAL, 'active')
+    ->andGroup()
+        ->where('role', Operator::EQUAL, 'admin')
+        ->or('role', Operator::EQUAL, 'editor')
+    ->endGroup();
+```
+
+---
+
+### JOIN
+
+#### `innerJoin()` / `leftJoin()` / `rightJoin()` / `fullJoin()`
+
+Add a join against another `Query` instance. Must be followed by `->on()`.
+
+```php
+public function innerJoin(Query $query, string $alias): Query
+public function leftJoin(Query $query, string $alias): Query
+public function rightJoin(Query $query, string $alias): Query
+public function fullJoin(Query $query, string $alias): Query
+```
+
+<ParamField path="query" type="FQL\Interface\Query" required>
+  The right-side query to join.
+</ParamField>
+
+<ParamField path="alias" type="string" required>
+  Alias used to access joined fields. Must not be empty.
+</ParamField>
+
+**Throws:** `JoinException` if alias is empty.
+
+#### `on()`
+
+Define the join condition immediately after a join method.
+
+```php
+public function on(string $leftKey, Enum\Operator $operator, string $rightKey): Query
+```
+
+**Throws:** `JoinException` if called without a preceding join.
+
+```php
+use FQL\Enum\Operator;
+
+$orders = Provider::fromFile('orders.json');
+$users  = Provider::fromFile('users.json');
+
+$results = $orders
+    ->select('orders.*', 'u.name')
+    ->leftJoin($users, 'u')
+    ->on('user_id', Operator::EQUAL, 'id')
+    ->execute();
+```
+
+---
+
+### GROUP BY / HAVING
+
+#### `groupBy()`
+
+Group results by one or more fields.
+
+```php
+public function groupBy(string ...$fields): Query
+```
+
+**Throws:** `QueryLogicException` when combined with `distinct()`.
+
+#### `having()`
+
+Filter groups using an aggregate condition.
+
+```php
+public function having(
+    string $key,
+    Enum\Operator $operator,
+    mixed $value
+): Interface\Query
+```
+
+```php
+$query
+    ->select('category')
+    ->count('id')->as('total')
+    ->groupBy('category')
+    ->having('total', Operator::GREATER_THAN, 5);
+```
+
+---
+
+### ORDER BY
+
+#### `orderBy()`
+
+Sort results by a field. The default direction is ascending.
+
+```php
+public function orderBy(string $field, ?Enum\Sort $type = null): Query
+```
+
+**Throws:** `OrderByException` if the same field is added twice.
+
+#### `asc()` / `desc()`
+
+Set the direction of the most recently added `orderBy()` field.
+
+```php
+public function asc(): Query
+public function desc(): Query
+```
+
+```php
+use FQL\Enum\Sort;
+
+$query->orderBy('created_at')->desc();
+$query->orderBy('name', Sort::ASC);
+```
+
+---
+
+### LIMIT / OFFSET / PAGE
+
+#### `limit()`
+
+Limit the number of rows returned, with an optional offset.
+
+```php
+public function limit(int $limit, ?int $offset = null): Query
+```
+
+#### `offset()`
+
+Skip the first N rows.
+
+```php
+public function offset(int $offset): Query
+```
+
+#### `page()`
+
+Convenience helper for pagination. Computes offset automatically.
+
+```php
+public function page(int $page, int $perPage = 20): Query
+```
+
+```php
+// Page 3, 25 items per page
+$query->page(3, 25);
+
+// Equivalent
+$query->offset(50)->limit(25);
+```
+
+---
+
+### UNION
+
+#### `union()`
+
+Combine results with another query, removing duplicates.
+
+```php
+public function union(Interface\Query $query): Interface\Query
+```
+
+#### `unionAll()`
+
+Combine results with another query, keeping duplicates.
+
+```php
+public function unionAll(Interface\Query $query): Interface\Query
+```
+
+```php
+$q1 = Provider::fromFile('employees_eu.json')->select('id', 'name');
+$q2 = Provider::fromFile('employees_us.json')->select('id', 'name');
+
+$results = $q1->union($q2)->execute();
+```
+
+<Note>
+When both queries have explicit column lists (not `SELECT *`), the column counts must match or `execute()` throws `QueryLogicException`.
+</Note>
+
+---
+
+### EXPLAIN
+
+#### `explain()`
+
+Return the query execution plan without running the query.
+
+```php
+public function explain(): Interface\Query
+```
+
+#### `explainAnalyze()`
+
+Run the query and collect performance metrics per phase.
+
+```php
+public function explainAnalyze(): Interface\Query
+```
+
+```php
+$plan = Provider::fromFile('orders.json')
+    ->select('status')
+    ->count('id')->as('total')
+    ->groupBy('status')
+    ->explain()
+    ->execute();
+
+foreach ($plan->fetchAll() as $phase) {
+    printf("%s: %d rows_out\n", $phase['phase'], $phase['rows_out']);
+}
+```
+
+---
+
+### EXECUTE
+
+#### `execute()`
+
+Run the query and return a `ResultsProvider`.
+
+```php
+public function execute(?string $resultClass = null): Results\ResultsProvider
+```
+
+<ParamField path="resultClass" type="string | null">
+  Force `Results\InMemory::class` or `Results\Stream::class`. When `null`, the mode is selected automatically: queries with joins or sorting use `InMemory`; all others use `Stream`.
+</ParamField>
+
+<ResponseField name="returns" type="FQL\Results\ResultsProvider">
+  Either a `Results\Stream` or `Results\InMemory` instance depending on query complexity.
+</ResponseField>
+
+```php
+use FQL\Results\InMemory;
+
+$results = Provider::fromFile('data.json')
+    ->select('id', 'name')
+    ->execute();
+
+// Force in-memory evaluation
+$results = Provider::fromFile('data.json')
+    ->execute(InMemory::class);
+```

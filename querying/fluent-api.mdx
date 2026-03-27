@@ -1,0 +1,214 @@
+---
+title: "Fluent API"
+description: "Build FiQueLa queries with a chainable PHP API. Select fields, filter rows, join files, group, sort, and paginate — all in one expression."
+---
+
+The fluent API lets you build queries by chaining PHP method calls. Every method returns the query object, so calls can be composed in any order.
+
+```php
+use FQL\Query;
+use FQL\Enum\Operator;
+
+$results = Query\Provider::fromFileQuery('json(./products.json).data.products')
+    ->select('id', 'name', 'brand.code')
+    ->where('price', Operator::GREATER_THAN, 100)
+    ->orderBy('price')->desc()
+    ->limit(20)
+    ->execute()
+    ->fetchAll();
+```
+
+<Note>
+  Every query implements `\Stringable`. Cast a query to a string to see the equivalent FQL representation — useful for debugging.
+
+  ```php
+  echo (string) $query;
+  ```
+</Note>
+
+## Selecting fields
+
+Use `select()` to specify which fields to include. Dot notation accesses nested fields. Multiple `select()` calls merge their fields.
+
+```php
+// All equivalent
+$query->select('id, name, address.city, address.state');
+$query->select('id', 'name', 'address.city', 'address.state');
+$query->select('id', 'name')->select('address.city', 'address.state');
+```
+
+Use `selectAll()` to select all fields (equivalent to `SELECT *`). You can combine it with additional fields:
+
+```php
+$query->selectAll()->select('totalPrice');
+```
+
+### Aliases
+
+Chain `as()` immediately after `select()` to alias the last selected field:
+
+```php
+$query->select('id')->as('clientId');
+$query->select('brand.code')->as('brandCode');
+```
+
+<Note>
+  `as()` only aliases the **last** field in the preceding `select()` call. For example, `select('id', 'name')->as('o')` creates `id, name AS o`.
+</Note>
+
+### DISTINCT
+
+Remove duplicate rows with `distinct()`:
+
+```php
+$query->select('category')->distinct();
+```
+
+### EXCLUDE
+
+Use `exclude()` to remove fields from the output — useful when applying functions and you want only the computed result:
+
+```php
+$query->select('id', 'name')
+    ->round('totalPrice', 2)->as('finalPrice')
+    ->exclude('totalPrice');
+
+// Output: id, name, finalPrice (totalPrice removed)
+```
+
+## Specifying the data path
+
+Use `from()` to point to the data root within the file. Dot notation traverses nested structures:
+
+```php
+$query->from('data.products');
+$query->from('SHOP.SHOPITEM');
+```
+
+When using `Query\Provider::fromFileQuery()`, the path embedded in the FileQuery string sets the initial `from`.
+
+## Pagination and limits
+
+```php
+// Return at most 20 rows starting from row 40
+$query->offset(40)->limit(20);
+
+// Page-based helper — page 2, 20 rows per page
+$query->page(2, perPage: 20);
+```
+
+## Sorting
+
+Chain `orderBy()` with `asc()` or `desc()`. Multiple `orderBy()` calls define a multi-column sort:
+
+```php
+use FQL\Enum\Sort;
+
+$query->orderBy('price')->desc();
+$query->orderBy('price', Sort::ASC)->orderBy('name', Sort::DESC);
+```
+
+## Conditions
+
+Filter rows with `where()`, then chain `and()`, `or()`, or `xor()`:
+
+```php
+use FQL\Enum\Operator;
+
+$query->where('price', Operator::GREATER_THAN, 100)
+    ->and('description', Operator::LIKE, '%wireless%')
+    ->or('price', Operator::BETWEEN, [300, 500]);
+```
+
+See [Conditions](/querying/conditions) for the full operator reference and condition grouping.
+
+## Joins
+
+Join other files or queries using `innerJoin()`, `leftJoin()`, `rightJoin()`, or `fullJoin()`, followed by `on()` to define the join condition:
+
+```php
+$orders = Query\Provider::fromFileQuery('xml(orders.xml).orders.order');
+
+$query->leftJoin($orders, 'o')
+    ->on('id', Operator::EQUAL, 'user_id');
+```
+
+See [Joining data sources](/querying/joins) for full details.
+
+## Grouping and aggregations
+
+Group rows with `groupBy()` and apply aggregate functions:
+
+```php
+$query->count('id')->as('total')
+    ->sum('price')->as('revenue')
+    ->groupBy('category.id')
+    ->having('total', Operator::GREATER_THAN, 10);
+```
+
+See [Grouping and aggregations](/querying/grouping-aggregations) for all aggregate functions.
+
+## UNION
+
+Combine results from multiple queries:
+
+```php
+// Remove duplicates
+$results = $query1->union($query2)->execute();
+
+// Keep all rows
+$results = $query1->unionAll($query2)->execute();
+```
+
+The number of selected columns must match across all combined queries (queries using `SELECT *` skip this check).
+
+## EXPLAIN
+
+Inspect the query execution plan without running the full query, or run it with timing data:
+
+```php
+// Plan only — no data processed
+$plan = $query->explain()->execute();
+
+// Execute and collect real row counts and timings
+$plan = $query->explainAnalyze()->execute();
+```
+
+See [EXPLAIN & benchmarking](/advanced/explain-analyze) for the full column reference.
+
+## Fluent API vs FQL string
+
+<CodeGroup>
+
+```php Fluent API
+use FQL\Query;
+use FQL\Enum\Operator;
+
+$query = Query\Provider::fromFileQuery('json(products.json).data.products')
+    ->select('brand.code')->as('brandCode')
+    ->groupConcat('id', '/')->as('products')
+    ->sum('price')->as('totalPrice')
+    ->count('id')->as('productCount')
+    ->where('price', Operator::LESS_THAN, 300)
+    ->or('price', Operator::GREATER_THAN, 400)
+    ->groupBy('brand.code')
+    ->orderBy('productCount')->desc();
+```
+
+```sql FQL string
+SELECT
+  brand.code AS brandCode,
+  GROUP_CONCAT(id, "/") AS products,
+  SUM(price) AS totalPrice,
+  COUNT(id) AS productCount
+FROM json(products.json).data.products
+WHERE
+  price < 300
+  OR price > 400
+GROUP BY brand.code
+ORDER BY productCount DESC
+```
+
+</CodeGroup>
+
+Casting the fluent query to a string produces the FQL representation, so you can always inspect what SQL-like string a fluent query corresponds to.

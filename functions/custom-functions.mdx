@@ -1,0 +1,132 @@
+---
+title: "Custom functions"
+description: "Extend FiQueLa with your own scalar functions by implementing one of the three base classes: SingleFieldFunction, MultipleFieldsFunction, or NoFieldFunction."
+---
+
+FiQueLa allows you to write custom scalar functions and plug them directly into your queries. A custom function is a PHP class that extends one of the provided base classes and implements two methods.
+
+## Base classes
+
+| Class | Namespace | Use when |
+|---|---|---|
+| `SingleFieldFunction` | `FQL\Functions\Core\SingleFieldFunction` | Your function operates on a single field |
+| `MultipleFieldsFunction` | `FQL\Functions\Core\MultipleFieldsFunction` | Your function takes multiple fields or mixed arguments |
+| `NoFieldFunction` | `FQL\Functions\Core\NoFieldFunction` | Your function takes no field argument (e.g. generators) |
+
+## Required methods
+
+Every custom function must implement two methods:
+
+| Method | Used in | Signature | Description |
+|---|---|---|---|
+| `__invoke` | `SingleFieldFunction`, `MultipleFieldsFunction` | `__invoke(array $item, array $resultItem): mixed` | Called for each row with the source row and computed result fields. |
+| `__invoke` | `NoFieldFunction` | `__invoke(): mixed` | Called for each row with no arguments. |
+| `__toString` | All | `__toString(): string` | Returns the FQL string representation of the function call. |
+
+For `SingleFieldFunction` and `MultipleFieldsFunction`: `$item` contains the raw source row; `$resultItem` contains fields already computed for the current row. Use `$this->getFieldValue($field, $item, $resultItem)` to resolve field names against both.
+
+## Example: SingleFieldFunction
+
+The following example appends a `_custom` suffix to any string field.
+
+```php
+use FQL\Functions\Core\SingleFieldFunction;
+
+class CustomSuffix extends SingleFieldFunction
+{
+    public function __invoke(array $item, array $resultItem): mixed
+    {
+        $value = (string) $this->getFieldValue($this->field, $item, $resultItem);
+        return $value . '_custom';
+    }
+
+    public function __toString(): string
+    {
+        return sprintf('customSuffix(%s)', $this->field);
+    }
+}
+```
+
+Use `$this->field` to access the field name passed to the constructor.
+
+## Example: MultipleFieldsFunction
+
+The following example concatenates multiple fields with a pipe separator.
+
+```php
+use FQL\Functions\Core\MultipleFieldsFunction;
+
+class PipeJoin extends MultipleFieldsFunction
+{
+    public function __invoke(array $item, array $resultItem): mixed
+    {
+        $parts = [];
+        foreach ($this->fields as $field) {
+            $value = $this->getFieldValue($field, $item, $resultItem);
+            if ($value !== null) {
+                $parts[] = (string) $value;
+            }
+        }
+        return implode('|', $parts);
+    }
+
+    public function __toString(): string
+    {
+        return sprintf('pipeJoin(%s)', implode(', ', $this->fields));
+    }
+}
+```
+
+Use `$this->fields` (an array) to access all field arguments.
+
+## Example: NoFieldFunction
+
+The following example returns the current PHP memory usage.
+
+```php
+use FQL\Functions\Core\NoFieldFunction;
+
+class MemoryUsage extends NoFieldFunction
+{
+    public function __invoke(): mixed
+    {
+        return memory_get_usage(true);
+    }
+
+    public function __toString(): string
+    {
+        return 'memoryUsage()';
+    }
+}
+```
+
+## Using a custom function in a query
+
+Pass an instance of your custom function to `->custom()`, then chain `->as()` to assign an alias.
+
+```php
+use FQL\Query\Provider;
+
+$query = Provider::fromFile('./data/products.json')
+    ->from('data.products')
+    ->select('id', 'name')
+    ->custom(new CustomSuffix('name'))->as('suffixedName')
+    ->custom(new PipeJoin('id', 'sku', 'ean'))->as('compositeKey')
+    ->custom(new MemoryUsage())->as('memBytes');
+```
+
+<Note>
+Custom functions are scalar — they run once per row, not once per group. To build a custom aggregate function, implement `FQL\Interface\InvokableAggregate` and `FQL\Interface\IncrementalAggregate` directly.
+</Note>
+
+## Field resolution helpers
+
+Base classes provide a `getFieldValue` helper that resolves a field name from the source row or the already-computed result row:
+
+```php
+// Resolves from $item first, then from $resultItem (computed aliases)
+$value = $this->getFieldValue('price', $item, $resultItem);
+
+// Quoted strings are returned as literal values
+$literal = $this->getFieldValue('"hello"', $item, $resultItem); // returns 'hello'
+```

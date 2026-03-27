@@ -1,0 +1,319 @@
+---
+title: "Stream\\Provider"
+description: "Static factory methods for opening data streams from files and strings, plus documentation for each individual stream class."
+---
+
+## Overview
+
+**Namespace:** `FQL\Stream`
+
+`Stream\Provider` opens a data file or an in-memory string and returns a stream object. Each stream implements `Interface\Stream` and exposes a `query()` method that returns a `Query` ready to run against that stream.
+
+You rarely need to call stream classes directly — [`Query\Provider::fromFile()`](/api/query-provider) wraps `Stream\Provider` automatically. Use `Stream\Provider` directly when you need to configure the stream (e.g. set a custom CSV delimiter) before building a query.
+
+---
+
+## `Stream\Provider` static methods
+
+### `fromFile()`
+
+Open a file and return the matching stream object. The format is detected from the file extension unless `$format` is provided.
+
+```php
+public static function fromFile(string $path, ?Enum\Format $format = null): Interface\Stream
+```
+
+<ParamField path="path" type="string" required>
+  Absolute or relative path to the data file.
+</ParamField>
+
+<ParamField path="format" type="FQL\Enum\Format | null">
+  Override the auto-detected format.
+</ParamField>
+
+<ResponseField name="returns" type="FQL\Interface\Stream">
+  A concrete stream instance (e.g. `Json`, `Csv`, `Xml`).
+</ResponseField>
+
+**Throws:** `FileNotFoundException`, `InvalidFormatException`
+
+```php
+use FQL\Stream\Provider;
+use FQL\Enum\Format;
+
+$stream = Provider::fromFile('data/products.json');
+$query  = $stream->query();
+
+// Force a format
+$stream = Provider::fromFile('data/export', Format::CSV);
+```
+
+---
+
+### `fromString()`
+
+Create a stream from an in-memory string. Supported formats: `JSON`, `YAML`, `NEON`.
+
+```php
+public static function fromString(string $data, Enum\Format $format): Interface\Stream
+```
+
+<ParamField path="data" type="string" required>
+  The raw string content to parse.
+</ParamField>
+
+<ParamField path="format" type="FQL\Enum\Format" required>
+  The format of the string content. Must be `Format::JSON`, `Format::YAML`, or `Format::NEON`.
+</ParamField>
+
+<ResponseField name="returns" type="FQL\Interface\Stream">
+  A stream wrapping the parsed string.
+</ResponseField>
+
+**Throws:** `InvalidFormatException` for unsupported formats (e.g. XML, CSV).
+
+```php
+use FQL\Stream\Provider;
+use FQL\Enum\Format;
+
+$json = '{"users": [{"id": 1, "name": "Alice"}]}';
+
+$results = Provider::fromString($json, Format::JSON)
+    ->query()
+    ->from('users')
+    ->execute();
+```
+
+---
+
+## Stream classes
+
+Each stream class can also be instantiated directly via its static `open()` method. After obtaining a stream instance, call `->query()` to get a `Query`.
+
+### `Xml`
+
+**Class:** `FQL\Stream\Xml`  
+**Formats:** `.xml`
+
+```php
+public static function open(string $path): Interface\Stream
+```
+
+```php
+use FQL\Stream\Xml;
+
+$query = Xml::open('catalog.xml')
+    ->query()
+    ->from('catalog.book');
+```
+
+<Tip>
+For XML files with non-UTF-8 encoding, call `->setInputEncoding('windows-1250')` on the stream before calling `->query()`.
+</Tip>
+
+---
+
+### `Json`
+
+**Class:** `FQL\Stream\Json`  
+**Formats:** `.json` (full in-memory parse)
+
+```php
+public static function open(string $path): Interface\Stream
+```
+
+Loads the entire JSON file into memory. Use `JsonStream` for large files.
+
+```php
+use FQL\Stream\Json;
+
+$query = Json::open('users.json')
+    ->query()
+    ->from('data.users');
+```
+
+---
+
+### `JsonStream`
+
+**Class:** `FQL\Stream\JsonStream`  
+**Formats:** `.json` (streaming, lazy)
+
+```php
+public static function open(string $path): Interface\Stream
+```
+
+Streams large JSON files row-by-row without loading the entire file into memory.
+
+```php
+use FQL\Stream\JsonStream;
+
+$query = JsonStream::open('large-catalog.json')->query();
+```
+
+---
+
+### `NDJson`
+
+**Class:** `FQL\Stream\NDJson`  
+**Formats:** `.ndjson` (Newline Delimited JSON)
+
+```php
+public static function open(string $path): Interface\Stream
+```
+
+Each line in the file must be a valid JSON object.
+
+```php
+use FQL\Stream\NDJson;
+
+$query = NDJson::open('events.ndjson')->query();
+```
+
+---
+
+### `Csv`
+
+**Class:** `FQL\Stream\Csv`  
+**Formats:** `.csv`, `.tsv`
+
+```php
+public static function open(string $path): Interface\Stream
+```
+
+<ParamField path="path" type="string" required>
+  Path to the CSV file.
+</ParamField>
+
+Default delimiter is `,`. To use a custom delimiter, call `openWithDelimiter()` directly, or use `fromFileQuery()` with query parameters.
+
+```php
+use FQL\Stream\Csv;
+
+// Default comma delimiter
+$query = Csv::open('orders.csv')->query();
+
+// Custom delimiter
+$query = Csv::openWithDelimiter('orders.tsv', "\t")->query();
+```
+
+```php
+// Via FileQuery string with custom delimiter
+use FQL\Query\Provider;
+
+$query = Provider::fromFileQuery('csv(orders.csv, ";").*');
+```
+
+---
+
+### `Yaml`
+
+**Class:** `FQL\Stream\Yaml`  
+**Formats:** `.yaml`, `.yml`
+
+```php
+public static function open(string $path): Interface\Stream
+```
+
+```php
+use FQL\Stream\Yaml;
+
+$query = Yaml::open('config.yaml')->query()->from('services');
+```
+
+---
+
+### `Neon`
+
+**Class:** `FQL\Stream\Neon`  
+**Formats:** `.neon`
+
+```php
+public static function open(string $path): Interface\Stream
+```
+
+NEON is the configuration format used by the Nette framework.
+
+```php
+use FQL\Stream\Neon;
+
+$query = Neon::open('config.neon')->query();
+```
+
+---
+
+### `Xls`
+
+**Class:** `FQL\Stream\Xls`  
+**Formats:** `.xls`, `.xlsx`
+
+```php
+public static function open(string $path): Interface\Stream
+```
+
+```php
+use FQL\Stream\Xls;
+
+$query = Xls::open('report.xlsx')->query()->from('Sheet1');
+```
+
+---
+
+### `Ods`
+
+**Class:** `FQL\Stream\Ods`  
+**Formats:** `.ods`
+
+```php
+public static function open(string $path): Interface\Stream
+```
+
+```php
+use FQL\Stream\Ods;
+
+$query = Ods::open('spreadsheet.ods')->query();
+```
+
+---
+
+### `Dir`
+
+**Class:** `FQL\Stream\Dir`  
+**Formats:** `dir`
+
+```php
+public static function open(string $path): Interface\Stream
+```
+
+Treats a directory as a data source. Each file in the directory becomes a row.
+
+```php
+use FQL\Stream\Dir;
+
+$query = Dir::open('/var/log/')->query();
+```
+
+---
+
+## `query()` method
+
+All stream classes inherit `query()` from `AbstractStream`.
+
+```php
+public function query(): FQL\Query\Query
+```
+
+Returns a fresh `Query` bound to this stream. See the [Query\\Provider reference](/api/query-provider) for the full fluent API.
+
+```php
+use FQL\Stream\Json;
+use FQL\Enum\Operator;
+
+$results = Json::open('products.json')
+    ->query()
+    ->select('id', 'name', 'price')
+    ->from('products')
+    ->where('price', Operator::LESS_THAN, 50)
+    ->limit(20)
+    ->execute();
+```

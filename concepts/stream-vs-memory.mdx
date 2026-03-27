@@ -1,0 +1,108 @@
+---
+title: "Stream vs. in-memory results"
+description: "How FiQueLa chooses between Results\\Stream and Results\\InMemory, when to override the default, and the memory implications of each mode."
+---
+
+After a query executes, FiQueLa wraps the results in one of two provider classes:
+
+- **`FQL\Results\Stream`** — a lazy generator that reads and processes rows on demand, without buffering the full result set.
+- **`FQL\Results\InMemory`** — an `ArrayIterator` that holds all result rows in memory at once.
+
+Both implement the same `ResultsProvider` interface, so `fetchAll()`, `fetch()`, `count()`, and all other result methods work identically on either type.
+
+## Automatic selection
+
+When you call `$query->execute()` without arguments, FiQueLa selects the result mode automatically:
+
+| Query contains | Result mode |
+|---|---|
+| No `ORDER BY`, no `JOIN` | `Results\Stream` |
+| `ORDER BY` | `Results\InMemory` |
+| Any `JOIN` | `Results\InMemory` |
+| `ORDER BY` and `JOIN` | `Results\InMemory` |
+
+<Note>
+`JOIN` and `ORDER BY` always require loading data into memory. Joining builds an in-memory hash map of the right-hand table, and sorting must buffer the full result set before it can determine the correct order. Queries that use neither operation can stream results row by row.
+</Note>
+
+## Explicit selection
+
+You can override the automatic choice by passing the desired class to `execute()`:
+
+```php
+use FQL\Results;
+
+// Force in-memory mode
+$results = $query->execute(Results\InMemory::class);
+
+// Force stream mode
+$results = $query->execute(Results\Stream::class);
+```
+
+<Warning>
+Forcing `Results\Stream` on a query that contains `ORDER BY` or `JOIN` will not sort or join correctly — those operations depend on having all data available at once. Only force stream mode when you are certain the query does not require either.
+</Warning>
+
+## Comparing the two modes
+
+### Results\Stream
+
+`Results\Stream` is a generator-based pipeline. Rows flow through each query phase (WHERE filter, SELECT projection, HAVING filter, LIMIT) one at a time. Memory usage stays low and roughly constant regardless of file size.
+
+```php
+use FQL\Query;
+
+// Large file — stream mode keeps memory usage flat
+$results = Query\Provider::fromFileQuery('jsonFile(events.json).events')
+    ->selectAll()
+    ->where('status', \FQL\Enum\Operator::EQUAL, 'active')
+    ->limit(100)
+    ->execute(); // Results\Stream chosen automatically
+
+foreach ($results->getIterator() as $row) {
+    // Each row is produced on demand
+    process($row);
+}
+```
+
+Stream mode also applies `LIMIT` early — it stops reading from the source file as soon as enough rows have been produced, which avoids scanning the entire file unnecessarily.
+
+### Results\InMemory
+
+`Results\InMemory` stores all result rows in an `ArrayIterator`. Once populated it can be iterated any number of times without re-executing the query, and random access by offset is O(1).
+
+```php
+use FQL\Query;
+use FQL\Results;
+
+// Force in-memory so results can be iterated multiple times
+$results = Query\Provider::fromFileQuery('csv(sales.csv).*')
+    ->select('region, SUM(amount)')->as('total')
+    ->from('*')
+    ->groupBy('region')
+    ->orderBy('total')->desc()
+    ->execute(Results\InMemory::class);
+
+// First pass
+foreach ($results->getIterator() as $row) {
+    echo $row['region'] . ': ' . $row['total'] . PHP_EOL;
+}
+
+// Second pass — no re-execution, data already in memory
+$top = $results->fetch();
+```
+
+## Performance considerations
+
+| Factor | Results\Stream | Results\InMemory |
+|---|---|---|
+| Memory usage | Low, constant | Proportional to result set size |
+| Re-iteration | Re-executes the query | Free — data already buffered |
+| `ORDER BY` | Not supported directly | Required — buffers all rows to sort |
+| `JOIN` | Not supported directly | Required — builds hash map in memory |
+| `LIMIT` without sort | Applied in stream (fast) | Applied after buffering |
+| Large files | Recommended | Use with caution |
+
+<Tip>
+For large files where you only need a filtered subset, use stream mode (the default when there is no `ORDER BY` or `JOIN`). For small result sets that you need to iterate multiple times, or any query using `ORDER BY` or `JOIN`, in-memory mode is appropriate.
+</Tip>

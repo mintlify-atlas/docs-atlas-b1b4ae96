@@ -1,0 +1,112 @@
+---
+title: "Exporting results with INTO"
+description: "Export query results to a file using the INTO clause. Supports CSV, JSON, XML, XLSX, ODS, and NDJSON output."
+---
+
+The `INTO` clause writes query results to a file. You call it on the result of `->execute()`, passing a target file query that describes the output format and path.
+
+## Fluent API
+
+Pass a `FileQuery` object or a raw file query string to `->into()`:
+
+```php
+use FQL\Query\FileQuery;
+use FQL\Query\Provider;
+use FQL\Enum\Operator;
+
+// Using a FileQuery object
+Provider::fromFileQuery('json(./data/products.json).data.products')
+    ->select('name', 'price')
+    ->where('price', Operator::GREATER_THAN_OR_EQUAL, 300)
+    ->execute()
+    ->into(new FileQuery('csv(./exports/products.csv)'));
+
+// Using a string shorthand
+Provider::fromFileQuery('json(./data/products.json).data.products')
+    ->select('name', 'price')
+    ->execute()
+    ->into('json(./exports/products.json).root.items');
+```
+
+## FQL syntax
+
+Place `INTO` after the `FROM` clause (and any `WHERE`, `ORDER BY`, etc.):
+
+```sql
+SELECT name, price
+FROM csv(./data/products-utf-8.csv).*
+INTO csv(./exports/products.csv)
+```
+
+`INTO` uses the same file query syntax as `FROM`:
+
+```
+format(pathToFile).query
+```
+
+## Output format path semantics
+
+The `.query` part of the file query has different meanings depending on the output format:
+
+| Format | `.query` meaning | Example |
+|---|---|---|
+| XML | `ROOT.ROW` — root element name and row element name | `.SHOP.ITEM` |
+| JSON | Nested key path for the output array | `.root.items` |
+| XLSX / ODS | `SheetName.StartCell` — sheet name and top-left cell | `.Sheet1.B4` |
+| CSV | Ignored | — |
+| NDJSON | Ignored | — |
+
+## Examples
+
+### Export to CSV
+
+```php
+use FQL\Query\Provider;
+
+Provider::fromFileQuery('json(./data/products.json).data.products')
+    ->select('name', 'price')
+    ->orderBy('price')->asc()
+    ->execute()
+    ->into('csv(./exports/products.csv)');
+```
+
+### Export to JSON
+
+```php
+use FQL\Query\Provider;
+
+Provider::fromFileQuery('xml(./data/feed.xml).SHOP.SHOPITEM')
+    ->select('NAME', 'PRICE')
+    ->execute()
+    ->into('json(./exports/items.json).root.items');
+```
+
+### Export to XML
+
+```php
+use FQL\Query\Provider;
+
+Provider::fromFileQuery('csv(./data/products.csv).*')
+    ->selectAll()
+    ->execute()
+    ->into('xml(./exports/products.xml).SHOP.ITEM');
+```
+
+### Export to XLSX
+
+```php
+use FQL\Query\Provider;
+
+Provider::fromFileQuery('json(./data/products.json).data.products')
+    ->selectAll()
+    ->execute()
+    ->into('xlsx(./exports/products.xlsx).Sheet1.A1');
+```
+
+## File handling behavior
+
+<Note>
+  If the target file already exists, FiQueLa throws a `FileAlreadyExistsException` and does **not** overwrite it. To export again, delete or rename the existing file first.
+</Note>
+
+Missing output directories are created automatically — you do not need to create them beforehand.

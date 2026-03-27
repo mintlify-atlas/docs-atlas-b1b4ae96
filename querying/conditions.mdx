@@ -1,0 +1,225 @@
+---
+title: "Conditions"
+description: "Filter rows with WHERE and HAVING using comparison operators, logical operators, condition groups, LIKE, REGEXP, IS, BETWEEN, and more."
+---
+
+FiQueLa supports rich filtering through `WHERE` (pre-aggregation) and `HAVING` (post-aggregation) conditions. Both use the same operator set and can be combined with logical operators and groups.
+
+## WHERE vs HAVING
+
+| Clause | When it runs | Use for |
+|---|---|---|
+| `WHERE` | Before grouping and aggregation | Filtering raw rows |
+| `HAVING` | After grouping and aggregation | Filtering aggregated results |
+
+```php
+use FQL\Enum\Operator;
+
+$query->count('id')->as('total')
+    ->sum('price')->as('revenue')
+    ->groupBy('category')
+    ->where('price', Operator::GREATER_THAN, 0)      // filters raw rows first
+    ->having('total', Operator::GREATER_THAN, 5);   // filters after grouping
+```
+
+## Comparison operators
+
+Import the `Operator` enum before using operators in the fluent API:
+
+```php
+use FQL\Enum\Operator;
+```
+
+| Enum constant | Operator | Description |
+|---|---|---|
+| `EQUAL` | `=` | Loose equality |
+| `EQUAL_STRICT` | `==` | Strict equality (type-safe) |
+| `NOT_EQUAL` | `!=` | Loose inequality |
+| `NOT_EQUAL_STRICT` | `!==` | Strict inequality (type-safe) |
+| `GREATER_THAN` | `>` | Greater than |
+| `GREATER_THAN_OR_EQUAL` | `>=` | Greater than or equal |
+| `LESS_THAN` | `<` | Less than |
+| `LESS_THAN_OR_EQUAL` | `<=` | Less than or equal |
+| `IN` | `IN` | Field value is in the given array |
+| `NOT_IN` | `NOT IN` | Field value is not in the given array |
+| `LIKE` | `LIKE` | Pattern match — `_` matches one character, `%` matches any sequence |
+| `NOT_LIKE` | `NOT LIKE` | Inverse of `LIKE` |
+| `REGEXP` | `REGEXP` | Match against a regular expression pattern |
+| `NOT_REGEXP` | `NOT REGEXP` | Inverse of `REGEXP` |
+| `IS` | `IS` | Type check — see IS operator section below |
+| `NOT_IS` | `IS NOT` | Inverse type check |
+| `BETWEEN` | `BETWEEN` | Field value is between two values (inclusive) |
+| `NOT_BETWEEN` | `NOT BETWEEN` | Inverse of `BETWEEN` |
+
+## Logical operators
+
+Chain multiple conditions using logical operators:
+
+```php
+$query->where('price', Operator::GREATER_THAN, 100)
+    ->and('stock', Operator::GREATER_THAN, 0)
+    ->or('featured', Operator::EQUAL, true)
+    ->xor('clearance', Operator::EQUAL, true);
+```
+
+In FQL strings:
+
+```sql
+WHERE price > 100
+  AND stock > 0
+  OR featured = true
+```
+
+## Basic examples
+
+<CodeGroup>
+
+```php Fluent API
+use FQL\Enum\Operator;
+
+// Comparison
+$query->where('price', Operator::GREATER_THAN, 100);
+
+// IN list
+$query->where('status', Operator::IN, ['active', 'pending']);
+
+// BETWEEN
+$query->where('price', Operator::BETWEEN, [300, 500]);
+
+// LIKE — wildcard matching
+$query->where('description', Operator::LIKE, '%wireless%');
+
+// REGEXP
+$query->where('name', Operator::REGEXP, '^Product [A-B]$');
+```
+
+```sql FQL string
+WHERE price > 100
+
+WHERE status IN ('active', 'pending')
+
+WHERE price BETWEEN 300 AND 500
+
+WHERE description LIKE "%wireless%"
+
+WHERE name REGEXP "^Product [A-B]$"
+```
+
+</CodeGroup>
+
+## LIKE pattern matching
+
+The `LIKE` operator follows MySQL conventions:
+
+| Wildcard | Matches |
+|---|---|
+| `%` | Any sequence of characters (including empty) |
+| `_` | Exactly one character |
+
+```php
+// Ends with 'Pro'
+$query->where('name', Operator::LIKE, '%Pro');
+
+// Starts with 'Widget'
+$query->where('name', Operator::LIKE, 'Widget%');
+
+// Contains 'cable'
+$query->where('name', Operator::LIKE, '%cable%');
+
+// Exactly 5 characters
+$query->where('code', Operator::LIKE, '_____');
+```
+
+Matching is case-insensitive.
+
+## REGEXP pattern matching
+
+The `REGEXP` operator accepts a regular expression pattern. If the pattern includes delimiters (e.g. `/pattern/i`), they are used as-is. Otherwise the pattern is wrapped in `/` delimiters automatically.
+
+```php
+$query->where('sku', Operator::REGEXP, '^[A-Z]{2}-\\d{4}$');
+$query->where('name', Operator::REGEXP, '^Product [A-C]');
+```
+
+```sql
+WHERE sku REGEXP "^[A-Z]{2}-\d{4}$"
+```
+
+## IS operator — type checking
+
+The `IS` and `IS NOT` operators check the PHP type of a field value. Pass a `Type` enum constant as the right-hand operand:
+
+```php
+use FQL\Enum\Operator;
+use FQL\Enum\Type;
+
+$query->where('price', Operator::IS, Type::NUMBER);
+$query->where('tags', Operator::IS, Type::ARRAY);
+$query->where('deletedAt', Operator::IS, Type::NULL);
+$query->where('active', Operator::NOT_IS, Type::FALSE);
+```
+
+| Type constant | PHP type check |
+|---|---|
+| `Type::BOOLEAN` | `is_bool()` |
+| `Type::TRUE` | `=== true` |
+| `Type::FALSE` | `=== false` |
+| `Type::NUMBER` | `is_numeric()` |
+| `Type::INTEGER` | `is_integer()` |
+| `Type::FLOAT` | `is_float()` |
+| `Type::STRING` | `is_string()` |
+| `Type::NULL` | `is_null()` |
+| `Type::ARRAY` | `is_array()` |
+| `Type::OBJECT` | `is_object()` |
+
+In FQL strings, use the type name directly:
+
+```sql
+WHERE price IS NUMBER
+WHERE tags IS ARRAY
+WHERE deletedAt IS NULL
+WHERE active IS NOT FALSE
+```
+
+## Condition grouping
+
+Group conditions with `whereGroup()`, `andGroup()`, `orGroup()`, `havingGroup()`, and `endGroup()` to build complex logic. Use `havingGroup()` specifically to start a grouped condition within the HAVING context:
+
+```php
+$query->where('price', Operator::GREATER_THAN, 100)
+    ->andGroup()
+        ->where('description', Operator::LIKE, '%very usefully')
+        ->or('price', Operator::LESS_THAN_OR_EQUAL, 300)
+        ->orGroup()
+            ->where('price', Operator::EQUAL, 200)
+            ->and('description', Operator::LIKE, '%very usefully')
+        ->endGroup()
+    ->endGroup()
+    ->orGroup()
+        ->where('price', Operator::LESS_THAN_OR_EQUAL, 300)
+    ->endGroup();
+```
+
+This produces the SQL-equivalent:
+
+```sql
+price > 100
+AND (
+    description LIKE '%very usefully'
+    OR price <= 300
+    OR (
+        price = 200
+        AND description LIKE '%very usefully'
+    )
+)
+OR (
+    price <= 300
+)
+```
+
+FQL strings also support parentheses for condition grouping:
+
+```sql
+WHERE price > 100
+  AND (description LIKE "%very usefully" OR price <= 300)
+```

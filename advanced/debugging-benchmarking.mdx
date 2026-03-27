@@ -1,0 +1,207 @@
+---
+title: "Debugging and benchmarking"
+description: "Inspect queries, dump results, and benchmark performance using the FQL\\Query\\Debugger class."
+---
+
+The `FQL\Query\Debugger` class provides CLI output utilities for inspecting queries, measuring execution time, and benchmarking iteration performance.
+
+<Warning>
+  `Debugger` requires the `tracy/tracy` package. Install it as a dev dependency:
+
+  ```bash
+  composer require --dev tracy/tracy
+  ```
+</Warning>
+
+## Starting and stopping
+
+Call `Debugger::start()` at the beginning of your script. It records the start timestamp and prints an initial memory snapshot. Call `Debugger::end()` when you are done to print final timing and memory totals.
+
+```php
+use FQL\Query\Debugger;
+
+Debugger::start();
+
+// ... your queries ...
+
+Debugger::end();
+```
+
+## Inspecting a query
+
+`Debugger::inspectQuery()` executes a query and prints the SQL representation, result count, memory size, and optionally all rows.
+
+```php
+use FQL\Query\Debugger;
+use FQL\Stream\Xml;
+
+$ordersFile = Xml::open(__DIR__ . '/data/orders.xml');
+$query = $ordersFile->query()
+    ->select('id')->as('orderId')
+    ->select('user_id')->as('userId')
+    ->select('total_price')->as('totalPrice')
+    ->from('orders.order');
+
+// Show SQL, result count, and first row
+Debugger::inspectQuery($query);
+
+// Show SQL, result count, and all rows
+Debugger::inspectQuery($query, listResults: true);
+```
+
+## Inspecting a raw SQL string
+
+`Debugger::inspectStreamSql()` parses a raw FQL string against an existing stream and shows what the applied query looks like compared to the original input.
+
+```php
+use FQL\Query\Debugger;
+use FQL\Stream\Xml;
+
+$ordersFile = Xml::open(__DIR__ . '/data/orders.xml');
+
+Debugger::inspectStreamSql(
+    $ordersFile,
+    'SELECT id, user_id, total_price FROM orders.order'
+);
+```
+
+Use `Debugger::inspectSql()` when you want to parse a self-contained FQL string (with format and path embedded) and have the `Query` object returned:
+
+```php
+$query = Debugger::inspectSql(
+    'SELECT id, name FROM json(./data/products.json).data.products WHERE price > 100'
+);
+
+Debugger::inspectQuery($query, listResults: true);
+```
+
+## Benchmarking a query
+
+`Debugger::benchmarkQuery()` runs a query in both stream and in-memory modes for the specified number of iterations, then prints throughput stats.
+
+```php
+use FQL\Query\Debugger;
+use FQL\Stream\Xml;
+
+$query = Xml::open(__DIR__ . '/data/orders.xml')->query()
+    ->select('id')->as('orderId')
+    ->select('user_id')->as('userId')
+    ->select('total_price')->as('totalPrice')
+    ->from('orders.order');
+
+Debugger::benchmarkQuery($query, iterations: 1000);
+```
+
+The default number of iterations is `2500`.
+
+## Dumping a value
+
+`Debugger::dump()` delegates to Tracy's `dump()` function for pretty-printing any PHP value:
+
+```php
+Debugger::dump($results->fetch());
+```
+
+## Example output
+
+Running `composer example:csv` produces output similar to this:
+
+```
+=========================
+### Debugger started: ###
+=========================
+> Memory usage (MB): 1.3191 (emalloc)
+> Memory peak usage (MB): 1.7326 (emalloc)
+------------------------------
+> Execution time (s): 8.5E-5
+> Execution time (ms): 0.085
+> Execution time (µs): 85
+> Execution memory peak usage (MB): 0
+=========================
+### Inspecting query: ###
+=========================
+==================
+### SQL query: ###
+==================
+> SELECT
+>   ean ,
+>   defaultCategory ,
+>   EXPLODE(defaultCategory, " > ") AS categoryArray ,
+>   price ,
+>   ROUND(price, 2) AS price_rounded ,
+>   MOD(price, 100) AS modulo_100 ,
+>   MOD(price, 54) AS modulo_54
+> FROM csv(products-w-1250.csv, "windows-1250", ";").*
+> GROUP BY defaultCategory
+> ORDER BY defaultCategory DESC
+================
+### Results: ###
+================
+> Result class: FQL\Results\InMemory
+> Results size memory (KB): 3.55
+> Result exists: true
+> Result count: 15
+========================
+### Fetch first row: ###
+========================
+array (7)
+   'ean' => 5010232964877
+   'defaultCategory' => 'Testování > Drogerie'
+   'categoryArray' => array (2)
+   |  0 => 'Testování'
+   |  1 => 'Drogerie'
+   'price' => 121.0
+   'price_rounded' => 121.0
+   'modulo_100' => 21.0
+   'modulo_54' => 13.0
+
+>>> SPLIT TIME <<<
+> Memory usage (MB): 3.1451 (emalloc)
+> Memory peak usage (MB): 3.2262 (emalloc)
+------------------------------
+> Execution time (s): 0.040016
+> Execution time (ms): 40.016
+> Execution time (µs): 40016
+> Execution memory peak usage (MB): 1.4936
+========================
+### Benchmark Query: ###
+========================
+> 2 500 iterations
+=========================
+### STREAM BENCHMARK: ###
+=========================
+> Size (KB): 2.78
+> Count: 15
+> Iterated results: 37 500
+>>> SPLIT TIME <<<
+> Execution time (ms): 36402.098
+> Execution memory peak usage (MB): 0
+============================
+### IN_MEMORY BENCHMARK: ###
+============================
+> Size (KB): 3.55
+> Count: 15
+> Iterated results: 37 500
+>>> SPLIT TIME <<<
+> Execution time (ms): 17.43
+> Execution memory peak usage (MB): 0
+=======================
+### Debugger ended: ###
+=======================
+> Final execution time (ms): 36459.756
+```
+
+Notice the large difference in iteration time between `STREAM BENCHMARK` (re-reads the file each time) and `IN_MEMORY BENCHMARK` (iterates a cached result set). Use in-memory results when you need to iterate over the same data multiple times.
+
+## Method reference
+
+| Method | Description |
+|---|---|
+| `Debugger::start()` | Record start time and print initial memory stats |
+| `Debugger::end()` | Print final elapsed time and memory totals |
+| `Debugger::inspectQuery($query, $listResults)` | Execute query and print SQL, count, memory, and rows |
+| `Debugger::inspectStreamSql($stream, $sql)` | Parse FQL against a stream and show applied SQL diff |
+| `Debugger::inspectSql($sql)` | Parse a self-contained FQL string and return the `Query` |
+| `Debugger::benchmarkQuery($query, $iterations)` | Run N iterations in both stream and in-memory modes |
+| `Debugger::dump($value)` | Pretty-print a PHP value via Tracy |
+| `Debugger::split()` | Print elapsed time since the last split point |

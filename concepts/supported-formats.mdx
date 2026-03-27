@@ -1,0 +1,259 @@
+---
+title: "Supported formats"
+description: "Every file format FiQueLa can read, with class names, capabilities, and code examples for opening each one."
+---
+
+FiQueLa supports nine file formats through dedicated stream classes. Each format is identified by a short key used in FQL syntax and in the `Enum\Format` enum.
+
+## Format table
+
+| Key | Name | Class | File | String |
+|---|---|---|---|---|
+| `csv` | CSV | `FQL\Stream\Csv` | Yes | No |
+| `xml` | XML | `FQL\Stream\Xml` | Yes | No |
+| `xls` | XLS / XLSX | `FQL\Stream\Xls` | Yes | No |
+| `ods` | ODS | `FQL\Stream\Ods` | Yes | No |
+| `jsonFile` | JSON stream | `FQL\Stream\JsonStream` | Yes | No |
+| `ndJson` | Newline-delimited JSON | `FQL\Stream\NDJson` | Yes | No |
+| `json` | JSON (`json_decode`) | `FQL\Stream\Json` | Yes | Yes |
+| `yaml` | YAML | `FQL\Stream\Yaml` | Yes | Yes |
+| `neon` | NEON | `FQL\Stream\Neon` | Yes | Yes |
+
+`json`, `yaml`, and `neon` also accept raw strings via `Stream\Provider::fromString()`. All other formats require a file path.
+
+## Opening formats
+
+You can open any format in three ways:
+
+1. **`Stream\Provider::fromFile()`** — auto-detects format from the file extension, or accepts an explicit `Enum\Format`.
+2. **Direct class `open()`** — call the class for the specific format directly.
+3. **FQL string syntax** — embed the format and path in an FQL `FROM` clause.
+
+<Tabs>
+  <Tab title="CSV">
+```php
+use FQL\Enum\Format;
+use FQL\Stream;
+
+// Auto-detect from extension
+$csv = Stream\Provider::fromFile('products.csv');
+
+// Explicit format
+$csv = Stream\Provider::fromFile('data.txt', Format::CSV);
+
+// Direct class
+$csv = Stream\Csv::open('products.csv');
+
+// With custom delimiter
+$csv = Stream\Csv::openWithDelimiter('products.csv', ';');
+
+$query = $csv->query()->selectAll()->from('*');
+```
+
+<Note>
+CSV supports two format-specific parameters: `encoding` (default `utf-8`) and `delimiter` (default `,`). Pass them via the FQL string syntax: `csv(data.csv, "windows-1250", ";")`.
+</Note>
+  </Tab>
+  <Tab title="XML">
+```php
+use FQL\Enum\Format;
+use FQL\Stream;
+
+// Auto-detect from extension
+$xml = Stream\Provider::fromFile('feed.xml');
+
+// Explicit format
+$xml = Stream\Provider::fromFile('data', Format::XML);
+
+// Direct class
+$xml = Stream\Xml::open('feed.xml');
+
+// With explicit encoding
+$xml = Stream\Xml::openWithEncoding('feed.xml', 'windows-1250');
+
+$query = $xml->query()->selectAll()->from('SHOP.SHOPITEM');
+```
+
+<Note>
+XML supports the `encoding` parameter (default `utf-8`). Specify it in FQL syntax: `xml(feed.xml, "windows-1250")`.
+</Note>
+  </Tab>
+  <Tab title="XLS / XLSX">
+```php
+use FQL\Enum\Format;
+use FQL\Stream;
+
+// Auto-detect from extension (.xls or .xlsx)
+$xls = Stream\Provider::fromFile('report.xlsx');
+
+// Direct class
+$xls = Stream\Xls::open('report.xls');
+
+$query = $xls->query()->selectAll()->from('*');
+```
+  </Tab>
+  <Tab title="ODS">
+```php
+use FQL\Enum\Format;
+use FQL\Stream;
+
+// Auto-detect from extension
+$ods = Stream\Provider::fromFile('spreadsheet.ods');
+
+// Direct class
+$ods = Stream\Ods::open('spreadsheet.ods');
+
+$query = $ods->query()->selectAll()->from('*');
+```
+  </Tab>
+  <Tab title="JSON stream">
+```php
+use FQL\Enum\Format;
+use FQL\Stream;
+
+// Auto-detect: .json and .jsonfile extensions map to JsonStream
+$json = Stream\Provider::fromFile('large-dataset.json');
+
+// Explicit format key
+$json = Stream\Provider::fromFile('data', Format::JSON_STREAM);
+
+// Direct class
+$json = Stream\JsonStream::open('large-dataset.json');
+
+$query = $json->query()->selectAll()->from('data.items');
+```
+
+<Tip>
+`JsonStream` uses `halaxa/json-machine` for streaming, making it suitable for large JSON files where loading the entire document into memory would be impractical.
+</Tip>
+  </Tab>
+  <Tab title="NDJSON">
+```php
+use FQL\Enum\Format;
+use FQL\Stream;
+
+// Auto-detect from .ndjson extension
+$ndjson = Stream\Provider::fromFile('events.ndjson');
+
+// Direct class
+$ndjson = Stream\NDJson::open('events.ndjson');
+
+$query = $ndjson->query()->selectAll()->from('*');
+```
+  </Tab>
+  <Tab title="JSON (in-memory)">
+```php
+use FQL\Enum\Format;
+use FQL\Stream;
+
+// From file — loads entire document via json_decode
+$json = Stream\Provider::fromFile('config.json', Format::JSON);
+
+// Direct class
+$json = Stream\Json::open('config.json');
+
+// From string
+$json = Stream\Provider::fromString(
+    '{"users":[{"id":1,"name":"Alice"}]}',
+    Format::JSON
+);
+
+$query = $json->query()->selectAll()->from('users');
+```
+  </Tab>
+  <Tab title="YAML">
+```php
+use FQL\Enum\Format;
+use FQL\Stream;
+
+// Auto-detect from .yaml or .yml extension
+$yaml = Stream\Provider::fromFile('config.yaml');
+
+// Direct class
+$yaml = Stream\Yaml::open('config.yaml');
+
+// From string
+$yaml = Stream\Provider::fromString(
+    "users:\n  - id: 1\n    name: Alice",
+    Format::YAML
+);
+
+$query = $yaml->query()->selectAll()->from('users');
+```
+  </Tab>
+  <Tab title="NEON">
+```php
+use FQL\Enum\Format;
+use FQL\Stream;
+
+// Auto-detect from .neon extension
+$neon = Stream\Provider::fromFile('config.neon');
+
+// Direct class
+$neon = Stream\Neon::open('config.neon');
+
+// From string
+$neon = Stream\Provider::fromString(
+    "users:\n\t- id: 1\n\t  name: Alice",
+    Format::NEON
+);
+
+$query = $neon->query()->selectAll()->from('users');
+```
+  </Tab>
+</Tabs>
+
+## Format-specific parameters
+
+Only CSV and XML accept additional configuration parameters.
+
+### CSV parameters
+
+| Parameter | Default | Description |
+|---|---|---|
+| `encoding` | `utf-8` | Input file encoding. Any encoding accepted by `iconv`. |
+| `delimiter` | `,` | Single-character field separator. |
+| `useHeader` | `1` | `1` to treat the first row as column headers, `0` otherwise. |
+
+In FQL string syntax:
+
+```sql
+-- Positional
+FROM csv(data.csv, "windows-1250", ";")
+
+-- Named
+FROM csv(data.csv, encoding: "windows-1250", delimiter: ";")
+```
+
+### XML parameters
+
+| Parameter | Default | Description |
+|---|---|---|
+| `encoding` | `utf-8` | Input file encoding. |
+
+In FQL string syntax:
+
+```sql
+FROM xml(feed.xml, "windows-1250")
+```
+
+## Directory provider
+
+`FQL\Stream\Dir` is a special provider that treats a directory as its data source. It lets you query metadata about files recursively across a directory tree.
+
+```php
+use FQL\Stream;
+
+$dir = Stream\Dir::open('./data');
+
+$query = $dir->query()
+    ->selectAll()
+    ->from('*');
+```
+
+In FQL string syntax, use the `dir` format key:
+
+```sql
+SELECT *
+FROM dir(./data).*
+```

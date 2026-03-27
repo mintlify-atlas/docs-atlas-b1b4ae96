@@ -1,0 +1,144 @@
+---
+title: "Aggregate functions"
+description: "Reference for aggregate functions in FiQueLa: COUNT, SUM, AVG, MIN, MAX, and GROUP_CONCAT. Includes DISTINCT support, GROUP BY, and HAVING usage."
+---
+
+Aggregate functions collapse multiple rows into a single summary value. They are always used together with `GROUP BY`, which groups rows sharing the same value in one or more fields before the aggregation is applied.
+
+## Aggregate vs. scalar functions
+
+| | Scalar functions | Aggregate functions |
+|---|---|---|
+| Input | One row at a time | All rows in a group |
+| Output | One value per input row | One value per group |
+| Requires `GROUP BY` | No | Yes |
+| Examples | `LOWER`, `ROUND`, `IF` | `COUNT`, `SUM`, `AVG` |
+
+## Reference
+
+| Fluent API method | FQL function | Description | DISTINCT support |
+|---|---|---|---|
+| `count($field)` | `COUNT(field)` | Count non-null values; `count()` with no argument counts all rows (`COUNT(*)`) | Yes (not with `COUNT(*)`) |
+| `sum($field)` | `SUM(field)` | Sum numeric values | Yes |
+| `avg($field)` | `AVG(field)` | Arithmetic mean of numeric values | No |
+| `min($field)` | `MIN(field)` | Minimum value in the group | Yes |
+| `max($field)` | `MAX(field)` | Maximum value in the group | Yes |
+| `groupConcat($field, $sep)` | `GROUP_CONCAT(field, sep)` | Concatenate values with a separator (default `,`) | Yes |
+
+## Basic aggregation example
+
+<CodeGroup>
+
+```php Fluent API
+use FQL\Enum\Operator;
+
+$query
+    ->select('brand.code')->as('brand')
+    ->count('id')->as('productCount')
+    ->sum('price')->as('totalPrice')
+    ->avg('price')->as('avgPrice')
+    ->min('price')->as('minPrice')
+    ->max('price')->as('maxPrice')
+    ->groupConcat('name', '/')->as('products')
+    ->groupBy('brand.code')
+    ->having('productCount', Operator::GREATER_THAN, 5)
+    ->orderBy('totalPrice', \FQL\Enum\Sort::DESC);
+```
+
+```sql FQL
+SELECT
+    brand.code AS brand,
+    COUNT(id) AS productCount,
+    SUM(price) AS totalPrice,
+    AVG(price) AS avgPrice,
+    MIN(price) AS minPrice,
+    MAX(price) AS maxPrice,
+    GROUP_CONCAT(name, '/') AS products
+FROM json(./data/products.json).data.products
+GROUP BY brand.code
+HAVING productCount > 5
+ORDER BY totalPrice DESC
+```
+
+</CodeGroup>
+
+## DISTINCT support
+
+Passing `true` as the second argument (Fluent API) or prefixing the field with `DISTINCT` (FQL) causes the function to operate only on unique values, ignoring duplicates.
+
+<CodeGroup>
+
+```php Fluent API
+$query
+    ->count('category', true)->as('uniqueCategories')
+    ->sum('price', true)->as('sumDistinct')
+    ->min('price', true)->as('minDistinct')
+    ->max('price', true)->as('maxDistinct')
+    ->groupConcat('tag', ',', true)->as('uniqueTags')
+    ->groupBy('brand.code');
+```
+
+```sql FQL
+SELECT
+    COUNT(DISTINCT category) AS uniqueCategories,
+    SUM(DISTINCT price) AS sumDistinct,
+    MIN(DISTINCT price) AS minDistinct,
+    MAX(DISTINCT price) AS maxDistinct,
+    GROUP_CONCAT(DISTINCT tag, ',') AS uniqueTags
+FROM json(./data/products.json).data.products
+GROUP BY brand.code
+```
+
+</CodeGroup>
+
+<Note>
+`DISTINCT` is not supported with `COUNT(*)`. Using it will throw an `InvalidArgumentException`.
+</Note>
+
+## HAVING clause
+
+`HAVING` filters groups after aggregation, similar to how `WHERE` filters individual rows before aggregation. You can reference aggregated aliases in the `HAVING` condition.
+
+<CodeGroup>
+
+```php Fluent API
+use FQL\Enum\Operator;
+
+$query
+    ->select('brand.code')->as('brand')
+    ->count('id')->as('productCount')
+    ->sum('price')->as('totalRevenue')
+    ->max('price')->as('topPrice')
+    ->groupBy('brand.code')
+    ->having('productCount', Operator::GREATER_THAN, 10)
+    ->or('totalRevenue', Operator::GREATER_THAN, 1000)
+    ->or('topPrice', Operator::LESS_THAN, 500);
+```
+
+```sql FQL
+SELECT
+    brand.code AS brand,
+    COUNT(id) AS productCount,
+    SUM(price) AS totalRevenue,
+    MAX(price) AS topPrice
+FROM json(./data/products.json).data.products
+GROUP BY brand.code
+HAVING
+    productCount > 10
+    OR totalRevenue > 1000
+    OR topPrice < 500
+```
+
+</CodeGroup>
+
+<Tip>
+You can use `HAVING` without `GROUP BY` to filter the entire result set as a single group — useful for checking totals across all rows.
+</Tip>
+
+## COUNT(*) vs COUNT(field)
+
+| Expression | Behaviour |
+|---|---|
+| `COUNT(*)` / `count()` | Counts every row in the group, including those with null values |
+| `COUNT(field)` / `count('field')` | Counts only rows where `field` is not null |
+| `COUNT(DISTINCT field)` | Counts distinct non-null values of `field` |

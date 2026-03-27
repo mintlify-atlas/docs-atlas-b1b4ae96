@@ -1,0 +1,44 @@
+---
+title: "Introduction"
+description: "FiQueLa is a PHP library that lets you query structured files with SQL-like syntax or a fluent API — no database required."
+---
+
+**FiQueLa** (File Query Language, pronounced _fi-kju-ela_) is a PHP library that brings SQL-style querying to file-based data. Filter, join, group, aggregate, and transform records from XML, CSV, JSON, YAML, NEON, NDJSON, XLS, and ODS files using either a fluent PHP API or an FQL string — all without setting up a database.
+
+## Key features
+
+- **Multiple formats**: XML, CSV, JSON, NDJSON, YAML, NEON, XLS, and ODS files in a single unified API.
+- **SQL-inspired syntax**: `SELECT`, `WHERE`, `JOIN`, `GROUP BY`, `HAVING`, `ORDER BY`, `LIMIT`, and more.
+- **Two query styles**: Write queries as FQL strings or chain methods with the fluent PHP API.
+- **Powerful expressions**: `CASE WHEN`, `IF`, nested condition groups, `XOR`, `REGEXP`, aggregate functions, and utility functions like `ROUND`, `EXPLODE`, `MOD`.
+- **Stream-first processing**: Large JSON, XML, and CSV files are processed with low memory overhead wherever possible.
+- **DTO mapping**: Map result rows directly to typed PHP objects.
+- **Debug tooling**: Built-in `Query\Debugger` with explain plans and benchmarking.
+
+## When to use FiQueLa
+
+FiQueLa is a good fit when:
+
+- You need to extract or analyze data from structured files without importing them into a database.
+- You want to join or aggregate data across multiple files or formats in a single query.
+- You are building lightweight data processing pipelines entirely in PHP.
+- You need to inspect or transform files during development, scripting, or ETL tasks.
+
+FiQueLa is not a replacement for a relational database in high-write or transactional workloads. For read-heavy file analysis, it provides a familiar query interface with minimal setup.
+
+## Get started
+
+<Columns cols={2}>
+  <Card title="Installation" icon="box" href="/installation">
+    Install FiQueLa via Composer and configure required PHP extensions.
+  </Card>
+  <Card title="Quickstart" icon="bolt" href="/quickstart">
+    Run your first query against a file in under five minutes.
+  </Card>
+  <Card title="Fluent API" icon="code" href="/querying/fluent-api">
+    Chain PHP methods to build expressive, readable queries.
+  </Card>
+  <Card title="FQL syntax" icon="terminal" href="/querying/fql-syntax">
+    Write SQL-like strings to query files directly.
+  </Card>
+</Columns>

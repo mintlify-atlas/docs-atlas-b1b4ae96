@@ -1,0 +1,205 @@
+---
+title: "Fetching results"
+description: "Execute queries and retrieve results with fetchAll(), fetch(), fetchSingle(), fetchNth(), exists(), count(), sum(), avg(), min(), max(), and DTO mapping."
+---
+
+Calling `execute()` on a query returns a `ResultsProvider` object. This does **not** immediately process all data — results are lazy by default and only materialized when you iterate or call a fetch method.
+
+```php
+$results = $query->execute();
+```
+
+## ResultsProvider modes
+
+`execute()` automatically selects the most efficient result mode, but you can override it explicitly:
+
+```php
+use FQL\Results;
+
+// Force in-memory (all rows loaded at once)
+$results = $query->execute(Results\InMemory::class);
+
+// Force streaming (rows processed one at a time)
+$results = $query->execute(Results\Stream::class);
+```
+
+<Note>
+  Queries with `JOIN` or `ORDER BY` always use `InMemory` mode regardless of the explicit parameter, because those operations require full dataset access.
+</Note>
+
+## Fetch methods
+
+### fetchAll()
+
+Returns a `Generator` that yields all result rows. Optionally maps each row to a DTO class:
+
+```php
+// Iterate over all rows as arrays
+foreach ($results->fetchAll() as $row) {
+    echo $row['name'] . '\n';
+}
+
+// Or collect into an array
+$rows = iterator_to_array($results->fetchAll());
+```
+
+### getIterator()
+
+Returns a `Traversable` — equivalent to `fetchAll()` without DTO mapping. Useful in `foreach` directly on the results object:
+
+```php
+foreach ($results as $row) {
+    echo $row['name'] . '\n';
+}
+```
+
+### fetch()
+
+Returns the first row only, or `null` if there are no results:
+
+```php
+$product = $results->fetch();
+if ($product !== null) {
+    echo $product['name'];
+}
+```
+
+### fetchSingle()
+
+Returns a single field value from the first row. Dot notation is supported for nested fields:
+
+```php
+$name = $results->fetchSingle('name');
+$city = $results->fetchSingle('address.city');
+```
+
+### fetchNth()
+
+Returns every nth row as a `Generator`. Pass an integer for every nth row, or `'even'`/`'odd'` for even/odd-indexed rows (0-based):
+
+```php
+// Every 4th row
+foreach ($results->fetchNth(4) as $row) { ... }
+
+// Even-indexed rows (0, 2, 4, ...)
+foreach ($results->fetchNth('even') as $row) { ... }
+
+// Odd-indexed rows (1, 3, 5, ...)
+foreach ($results->fetchNth('odd') as $row) { ... }
+```
+
+### exists()
+
+Returns `true` if at least one result row exists. More efficient than `count()` because it stops after finding the first row:
+
+```php
+if ($results->exists()) {
+    echo 'Records found.';
+}
+```
+
+### count()
+
+Returns the total number of result rows:
+
+```php
+$total = $results->count();
+```
+
+## Aggregate methods
+
+These methods compute values over the result set without requiring a `GROUP BY` in the query:
+
+```php
+$total   = $results->sum('total_price');       // float
+$average = $results->avg('total_price', 2);    // float, 2 decimal places
+$highest = $results->max('total_price');       // float
+$lowest  = $results->min('total_price');       // float
+```
+
+| Method | Signature | Returns |
+|---|---|---|
+| `sum()` | `sum(string $field): float` | Sum of all values in the field |
+| `avg()` | `avg(string $field, int $decimalPlaces = 2): float` | Average value, rounded to given decimal places |
+| `max()` | `max(string $field): float` | Maximum value in the field |
+| `min()` | `min(string $field): float` | Minimum value in the field |
+
+## DTO mapping
+
+All fetch methods that return rows accept an optional `class-string $dto` parameter. When provided, each row is mapped to an instance of the given class using reflection.
+
+### Anonymous class DTO
+
+```php
+use FQL\Enum\Operator;
+use FQL\Query;
+
+$query = Query\Provider::fromFileQuery('json(products.json).data.products')
+    ->select('id, name, price')
+    ->select('brand.name')->as('brand')
+    ->from('data.products')
+    ->where('price', Operator::GREATER_THAN, 200)
+    ->orderBy('price')->desc();
+
+$dto = new class {
+    public int $id;
+    public string $name;
+    public int $price;
+    public string $brand;
+};
+
+$product = $query->execute()->fetch($dto::class);
+// $product is an instance of the anonymous class with populated properties
+```
+
+### Named class DTO
+
+```php
+class ProductDto
+{
+    public int $id;
+    public string $name;
+    public int $price;
+    public string $brand;
+}
+
+foreach ($results->fetchAll(ProductDto::class) as $product) {
+    echo $product->name . ': ' . $product->price . '\n';
+}
+```
+
+### Constructor-based DTO
+
+If the class has a constructor, FiQueLa maps field values to constructor parameters by name:
+
+```php
+class OrderDto
+{
+    public function __construct(
+        public readonly int $id,
+        public readonly string $status,
+        public readonly float $total
+    ) {}
+}
+
+$order = $results->fetch(OrderDto::class);
+```
+
+<Note>
+  DTO mapping uses PHP reflection. Public properties are populated by matching field names. If a constructor is present, parameters are matched by name from the result row.
+</Note>
+
+## INTO — exporting results
+
+After executing, you can pipe results directly to an output file using `into()`:
+
+```php
+use FQL\Query\Provider;
+
+Provider::fromFile('data.csv')
+    ->select('NAME', 'PRICE')
+    ->execute()
+    ->into('json(exports/products.json).root.items');
+```
+
+See the [FQL syntax](/querying/fql-syntax#into) page for the full `INTO` format reference.

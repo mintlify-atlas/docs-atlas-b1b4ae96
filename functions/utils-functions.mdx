@@ -1,0 +1,222 @@
+---
+title: "Utility functions"
+description: "Reference for array, type, date/time, conditional, and miscellaneous utility functions in FiQueLa."
+---
+
+Utility functions cover a wide range of operations: array manipulation, type casting, date arithmetic, conditional logic, and more.
+
+<Tabs>
+  <Tab title="Array">
+
+## Array functions
+
+| Fluent API method | FQL function | Description |
+|---|---|---|
+| `arrayCombine($keys, $values)` | `ARRAY_COMBINE(keys, values)` | Combine a keys array and a values array into an associative array |
+| `arrayFilter($field)` | `ARRAY_FILTER(field)` | Remove empty/null entries from an array |
+| `arraySearch($field, $needle)` | `ARRAY_SEARCH(field, needle)` | Return the key of the first matching value |
+| `arrayMerge($field1, $field2)` | `ARRAY_MERGE(field1, field2)` | Merge two arrays into one |
+| `colSplit($field, $format, $key)` | `COL_SPLIT(field, format, key)` | Expand an array field into separate columns |
+
+<CodeGroup>
+
+```php Fluent API
+$query
+    ->arrayCombine('fieldWithKeys', 'fieldWithValues')->as('combined')
+    ->arrayFilter('tags')->as('cleanTags')
+    ->arraySearch('categories', 'electronics')->as('catKey')
+    ->arrayMerge('list1', 'list2')->as('merged')
+    ->colSplit('items', 'item_%index', 'id');
+```
+
+```sql FQL
+SELECT
+    ARRAY_COMBINE(fieldWithKeys, fieldWithValues) AS combined,
+    ARRAY_FILTER(tags) AS cleanTags,
+    ARRAY_SEARCH(categories, 'electronics') AS catKey,
+    ARRAY_MERGE(list1, list2) AS merged,
+    COL_SPLIT(items, 'item_%index', 'id')
+FROM json(./data/products.json).data.products
+```
+
+</CodeGroup>
+
+  </Tab>
+  <Tab title="Type">
+
+## Type functions
+
+| Fluent API method | FQL function | Description |
+|---|---|---|
+| `cast($field, Type $type)` | `CAST(field AS type)` | Cast a value to the specified type |
+| `coalesce(...$fields)` | `COALESCE(...)` | Return the first non-null value |
+| `coalesceNotEmpty(...$fields)` | `COALESCE_NE(...)` | Return the first non-empty value |
+
+Supported cast types (`\FQL\Enum\Type`): `INT`, `DOUBLE`, `STRING`, `BOOLEAN`, `ARRAY`, `OBJECT`.
+
+<CodeGroup>
+
+```php Fluent API
+use FQL\Enum\Type;
+
+$query
+    ->cast('price', Type::FLOAT)->as('priceFloat')
+    ->coalesce('nickname', 'username', 'email')->as('displayName')
+    ->coalesceNotEmpty('shortDesc', 'description')->as('desc');
+```
+
+```sql FQL
+SELECT
+    CAST(price AS DOUBLE) AS priceFloat,
+    COALESCE(nickname, username, email) AS displayName,
+    COALESCE_NE(shortDesc, description) AS desc
+FROM json(./data/users.json).data.users
+```
+
+</CodeGroup>
+
+  </Tab>
+  <Tab title="Date/time">
+
+## Date and time functions
+
+| Fluent API method | FQL function | Description |
+|---|---|---|
+| `formatDate($field, $format)` | `DATE_FORMAT(field, format)` | Format a date value as a string |
+| `fromUnixTime($field, $format)` | `FROM_UNIXTIME(field, format)` | Convert a Unix timestamp to a formatted date |
+| `strToDate($field, $format)` | `STR_TO_DATE(field, format)` | Parse a date string using a format mask |
+| `dateDiff($field1, $field2)` | `DATE_DIFF(field1, field2)` | Number of days between two dates |
+| `dateAdd($field, $interval)` | `DATE_ADD(field, interval)` | Add a date/time interval to a date |
+| `dateSub($field, $interval)` | `DATE_SUB(field, interval)` | Subtract a date/time interval from a date |
+| `year($field)` | `YEAR(field)` | Extract the year from a date |
+| `month($field)` | `MONTH(field)` | Extract the month from a date |
+| `day($field)` | `DAY(field)` | Extract the day of the month from a date |
+| `now(bool $numeric)` | `NOW()` | Current datetime as `Y-m-d H:i:s` string (or `YmdHis` integer when `$numeric = true`) |
+| `currentTimestamp()` | `CURRENT_TIMESTAMP()` | Current Unix timestamp (integer) |
+| `currentDate()` | `CURDATE()` | Current date |
+| `currentTime()` | `CURTIME()` | Current time |
+
+<CodeGroup>
+
+```php Fluent API
+$query
+    ->formatDate('createdAt', 'Y-m-d')->as('date')
+    ->fromUnixTime('publishedAt', 'Y-m-d H:i:s')->as('published')
+    ->strToDate('dateString', '%Y-%m-%d')->as('parsed')
+    ->dateDiff('endDate', 'startDate')->as('daysDiff')
+    ->dateAdd('startDate', '+1 month')->as('nextMonth')
+    ->dateSub('endDate', '+7 days')->as('weekBefore')
+    ->year('createdAt')->as('yr')
+    ->month('createdAt')->as('mo')
+    ->day('createdAt')->as('dy')
+    ->now()->as('currentDateTime')
+    ->currentTimestamp()->as('ts')
+    ->currentDate()->as('today')
+    ->currentTime()->as('nowTime');
+```
+
+```sql FQL
+SELECT
+    DATE_FORMAT(createdAt, 'Y-m-d') AS date,
+    FROM_UNIXTIME(publishedAt, 'Y-m-d H:i:s') AS published,
+    STR_TO_DATE(dateString, '%Y-%m-%d') AS parsed,
+    DATE_DIFF(endDate, startDate) AS daysDiff,
+    DATE_ADD(startDate, '+1 month') AS nextMonth,
+    DATE_SUB(endDate, '+7 days') AS weekBefore,
+    YEAR(createdAt) AS yr,
+    MONTH(createdAt) AS mo,
+    DAY(createdAt) AS dy,
+    NOW() AS currentDateTime,
+    CURRENT_TIMESTAMP() AS ts,
+    CURDATE() AS today,
+    CURTIME() AS nowTime
+FROM json(./data/orders.json).data.orders
+```
+
+</CodeGroup>
+
+  </Tab>
+  <Tab title="Conditional">
+
+## Conditional functions
+
+| Fluent API method | FQL function | Description |
+|---|---|---|
+| `if($condition, $true, $false)` | `IF(condition, trueVal, falseVal)` | Return one of two values based on a condition |
+| `ifNull($field, $default)` | `IFNULL(field, default)` | Return `$default` when the field is null |
+| `isNull($field)` | `ISNULL(field)` | Return `true` if the field is null |
+| `case()->whenCase()->elseCase()->endCase()` | `CASE WHEN ... THEN ... ELSE ... END` | Multi-branch conditional expression |
+
+<CodeGroup>
+
+```php Fluent API
+$query
+    ->if('`stock` > 0', 'in stock', 'out of stock')->as('availability')
+    ->ifNull('nickname', 'Anonymous')->as('displayName')
+    ->isNull('deletedAt')->as('isActive')
+    ->case()
+        ->whenCase('stock > 100', 'plentiful')
+        ->whenCase('stock > 10', 'low')
+        ->whenCase('stock > 0', 'critical')
+        ->elseCase('out of stock')
+    ->endCase()->as('stockLabel');
+```
+
+```sql FQL
+SELECT
+    IF(stock > 0, 'in stock', 'out of stock') AS availability,
+    IFNULL(nickname, 'Anonymous') AS displayName,
+    ISNULL(deletedAt) AS isActive,
+    CASE
+        WHEN stock > 100 THEN 'plentiful'
+        WHEN stock > 10 THEN 'low'
+        WHEN stock > 0 THEN 'critical'
+        ELSE 'out of stock'
+    END AS stockLabel
+FROM json(./data/products.json).data.products
+```
+
+</CodeGroup>
+
+### CASE WHEN syntax
+
+The `CASE` expression evaluates conditions in order and returns the value of the first matching `WHEN` branch. The optional `ELSE` branch provides a fallback for when no condition matches; if omitted and nothing matches, the result is `null`.
+
+  </Tab>
+  <Tab title="Other">
+
+## Other utility functions
+
+| Fluent API method | FQL function | Description |
+|---|---|---|
+| `length($field)` | `LENGTH(field)` | Length of a string, count of an array, or `0` for null |
+| `randomBytes($length)` | `RANDOM_BYTES(length)` | Cryptographically secure random bytes |
+| `uuid()` | `UUID()` | Generate a random UUID v4 |
+
+<CodeGroup>
+
+```php Fluent API
+$query
+    ->length('description')->as('descLength')
+    ->length('tags')->as('tagCount')
+    ->randomBytes(16)->as('nonce')
+    ->uuid()->as('rowId');
+```
+
+```sql FQL
+SELECT
+    LENGTH(description) AS descLength,
+    LENGTH(tags) AS tagCount,
+    RANDOM_BYTES(16) AS nonce,
+    UUID() AS rowId
+FROM json(./data/products.json).data.products
+```
+
+</CodeGroup>
+
+<Note>
+`LENGTH` is context-aware: it returns the character count for strings, the element count for arrays, and `0` for `null`.
+</Note>
+
+  </Tab>
+</Tabs>

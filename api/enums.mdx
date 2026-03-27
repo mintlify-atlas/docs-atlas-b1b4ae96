@@ -1,0 +1,320 @@
+---
+title: "Enums"
+description: "All backed enums in the FQL\\Enum namespace, with their cases, values, and available methods."
+---
+
+## Overview
+
+**Namespace:** `FQL\Enum`
+
+FiQueLa uses PHP backed enums throughout the fluent API. All enums are in the `FQL\Enum` namespace.
+
+```php
+use FQL\Enum\Operator;
+use FQL\Enum\Sort;
+use FQL\Enum\Format;
+
+$query
+    ->where('price', Operator::GREATER_THAN, 100)
+    ->orderBy('name', Sort::ASC)
+    ->execute();
+
+$stream = \FQL\Stream\Provider::fromFile('data.json', Format::JSON);
+```
+
+---
+
+## `Operator`
+
+**Type:** `string`
+
+Comparison operators used in `where()`, `and()`, `or()`, `xor()`, `having()`, and `on()` calls.
+
+| Case | Value | Description |
+|------|-------|-------------|
+| `EQUAL` | `=` | Loose equality (`==`) |
+| `EQUAL_STRICT` | `==` | Strict equality (`===`) |
+| `NOT_EQUAL` | `!=` | Loose inequality (`!=`) |
+| `NOT_EQUAL_STRICT` | `!==` | Strict inequality (`!==`) |
+| `GREATER_THAN` | `>` | Greater than |
+| `GREATER_THAN_OR_EQUAL` | `>=` | Greater than or equal |
+| `LESS_THAN` | `<` | Less than |
+| `LESS_THAN_OR_EQUAL` | `<=` | Less than or equal |
+| `IN` | `IN` | Value exists in an array |
+| `NOT_IN` | `NOT IN` | Value does not exist in an array |
+| `LIKE` | `LIKE` | SQL-style pattern match (`%`, `_`) |
+| `NOT_LIKE` | `NOT LIKE` | Inverse LIKE |
+| `REGEXP` | `REGEXP` | Regular expression match |
+| `NOT_REGEXP` | `NOT REGEXP` | Inverse REGEXP |
+| `IS` | `IS` | Type check — right operand must be `Type` enum |
+| `NOT_IS` | `IS NOT` | Inverse type check |
+| `BETWEEN` | `BETWEEN` | Inclusive range — right operand is `[min, max]` |
+| `NOT_BETWEEN` | `NOT BETWEEN` | Inverse BETWEEN |
+
+### Methods
+
+#### `evaluate(mixed $left, mixed $right): bool`
+
+Evaluate the operator against two values. Used internally by the query engine.
+
+#### `render(mixed $value, mixed $right): string`
+
+Render the operator and its operands as a SQL-like string.
+
+#### `static fromOrFail(string $operator): self`
+
+Create an `Operator` from a string value, throwing `InvalidArgumentException` for unknown operators.
+
+```php
+use FQL\Enum\Operator;
+
+$op = Operator::fromOrFail('>'); // Operator::GREATER_THAN
+
+// IN example — right side is an array
+$query->where('status', Operator::IN, ['active', 'pending']);
+
+// BETWEEN example — right side is [min, max]
+$query->where('price', Operator::BETWEEN, [10, 50]);
+
+// IS example — right side is a Type enum
+$query->where('deleted_at', Operator::IS, \FQL\Enum\Type::NULL);
+
+// LIKE example
+$query->where('name', Operator::LIKE, 'John%');
+```
+
+---
+
+## `Sort`
+
+**Type:** `string`
+
+Sort direction for `orderBy()` and `sortBy()`.
+
+| Case | Value | Description |
+|------|-------|-------------|
+| `ASC` | `asc` | Ascending order (default) |
+| `DESC` | `desc` | Descending order |
+
+```php
+use FQL\Enum\Sort;
+
+$query->orderBy('created_at', Sort::DESC);
+$query->orderBy('name', Sort::ASC);
+
+// Or use the fluent shortcuts
+$query->orderBy('price')->desc();
+```
+
+---
+
+## `Format`
+
+**Type:** `string`
+
+Supported data formats used when opening files or forcing a format override.
+
+| Case | Value | File extensions | Description |
+|------|-------|-----------------|-------------|
+| `XML` | `xml` | `.xml` | XML documents |
+| `JSON` | `json` | — | JSON (full in-memory) |
+| `JSON_STREAM` | `jsonFile` | `.json`, `.jsonfile` | JSON (streaming) |
+| `ND_JSON` | `ndJson` | `.ndjson` | Newline Delimited JSON |
+| `CSV` | `csv` | `.csv`, `.tsv` | Comma/delimiter-separated values |
+| `YAML` | `yaml` | `.yaml`, `.yml` | YAML |
+| `NEON` | `neon` | `.neon` | Nette NEON |
+| `XLS` | `xls` | `.xls`, `.xlsx` | Excel spreadsheets |
+| `ODS` | `ods` | `.ods` | OpenDocument Spreadsheet |
+| `DIR` | `dir` | — | Directory listing |
+
+### Methods
+
+#### `getFormatProviderClass(): class-string`
+
+Return the stream class that handles this format.
+
+#### `static fromExtension(string $extension): self`
+
+Resolve a `Format` from a file extension string. Throws `InvalidFormatException` for unsupported extensions.
+
+#### `openFile(string $path): Interface\Stream`
+
+Open a file using this format and return a stream. Throws `FileNotFoundException`, `InvalidFormatException`.
+
+#### `fromString(string $data): Interface\Stream`
+
+Create a stream from an in-memory string. Supported for `JSON`, `YAML`, and `NEON` only.
+
+#### `getDefaultParams(): array`
+
+Return default format parameters (e.g. `encoding`, `delimiter` for CSV).
+
+```php
+use FQL\Enum\Format;
+use FQL\Stream\Provider;
+
+$stream = Provider::fromFile('report.xlsx', Format::XLS);
+
+// Detect from extension
+$format = Format::fromExtension('csv'); // Format::CSV
+```
+
+---
+
+## `Join`
+
+**Type:** `string`
+
+Join type used with `innerJoin()`, `leftJoin()`, `rightJoin()`, and `fullJoin()`.
+
+| Case | Value | Description |
+|------|-------|-------------|
+| `INNER` | `INNER JOIN` | Return only rows with a match on both sides |
+| `LEFT` | `LEFT JOIN` | All left rows; nulls for unmatched right rows |
+| `RIGHT` | `RIGHT JOIN` | All right rows; nulls for unmatched left rows |
+| `FULL` | `FULL JOIN` | All rows from both sides; nulls where no match |
+
+```php
+use FQL\Enum\Join;
+use FQL\Query\Provider;
+use FQL\Enum\Operator;
+
+// Join type is set implicitly via the join methods:
+$query->leftJoin($otherQuery, 'alias')->on('id', Operator::EQUAL, 'user_id');
+```
+
+---
+
+## `Type`
+
+**Type:** `string`
+
+PHP type identifiers used with the `IS` / `IS NOT` operators and the `cast()` SELECT function.
+
+| Case | Value | PHP type |
+|------|-------|----------|
+| `BOOLEAN` | `boolean` | Any boolean value (`is_bool()`) |
+| `TRUE` | `true` | Literally `true` |
+| `FALSE` | `false` | Literally `false` |
+| `NUMBER` | `number` | Any numeric value (`is_numeric()`) |
+| `INTEGER` | `int` | Integer type (`is_integer()`) |
+| `FLOAT` | `double` | Float type (`is_float()`) |
+| `STRING` | `string` | String type (`is_string()`) |
+| `NULL` | `null` | Null value (`is_null()`) |
+| `ARRAY` | `array` | Array type (`is_array()`) |
+| `OBJECT` | `object` | Object type (`is_object()`) |
+| `RESOURCE` | `resource` | Open resource |
+| `RESOURCE_CLOSED` | `resource (closed)` | Closed resource |
+| `UNKNOWN` | `unknown` | Unknown type |
+
+### Methods
+
+#### `static match(mixed $value): self`
+
+Detect the `Type` of a PHP value using `gettype()`.
+
+#### `static matchByString(string $value): mixed`
+
+Parse a string representation (e.g. `'null'`, `'true'`, `'42'`, `'"hello"'`) and return the correctly typed PHP value.
+
+#### `static castValue(mixed $value, ?Type $type = null): mixed`
+
+Cast a value to the specified type. When `$type` is `null` the type is detected automatically.
+
+#### `static listValues(): Type[]`
+
+Return all primary (non-alias) type cases.
+
+```php
+use FQL\Enum\Type;
+use FQL\Enum\Operator;
+
+// Check for null
+$query->where('deleted_at', Operator::IS, Type::NULL);
+
+// Check for integer
+$query->where('id', Operator::IS, Type::INTEGER);
+
+// Cast in SELECT
+$query->cast('price', Type::FLOAT)->as('price_float');
+```
+
+---
+
+## `LogicalOperator`
+
+**Type:** `string`
+
+Logical connectors between conditions. Used internally and accessible via the `where()` / `and()` / `or()` / `xor()` fluent methods.
+
+| Case | Value | Description |
+|------|-------|-------------|
+| `AND` | `AND` | Both conditions must be true |
+| `OR` | `OR` | At least one condition must be true |
+| `XOR` | `XOR` | Exactly one condition must be true |
+
+### Methods
+
+#### `evaluate(?bool $left, bool $right): bool`
+
+Apply the logical operator to two boolean values. When `$left` is `null` (first condition), returns `$right` directly.
+
+#### `render(bool $spaces = false): string`
+
+Return the string value, optionally surrounded by spaces.
+
+#### `static casesValues(): string[]`
+
+Return all case values as a plain string array: `['AND', 'OR', 'XOR']`.
+
+```php
+use FQL\Enum\LogicalOperator;
+
+$op = LogicalOperator::AND;
+echo $op->render(true); // ' AND '
+
+$values = LogicalOperator::casesValues(); // ['AND', 'OR', 'XOR']
+```
+
+---
+
+## `Fulltext`
+
+**Type:** `string`
+
+Fulltext search mode used with `matchAgainst()` / `fulltext()` in the SELECT clause.
+
+| Case | Value | Description |
+|------|-------|-------------|
+| `NATURAL` | `NATURAL` | Natural language relevance scoring based on word presence and sequence |
+| `BOOLEAN` | `BOOLEAN` | Boolean search with operator prefixes (`+`, `-`, `>`, `<`, `*`, `~`) |
+
+### Methods
+
+#### `calculate(string $fieldValue, array $terms): float`
+
+Compute a relevance score for a field value against a list of search terms. Returns a float; higher values mean more relevant.
+
+Boolean mode operators:
+
+| Prefix | Effect |
+|--------|--------|
+| `+word` | Word must be present; +1 per match |
+| `-word` | Word must be absent; +1 when absent |
+| `>word` | High-weight match; +2 |
+| `<word` | Low-weight match; +0.5 |
+| `*word` | Weight by occurrence count (×1.5 per occurrence) |
+| `~word` | Weak match; +0.7 |
+
+```php
+use FQL\Enum\Fulltext;
+use FQL\Enum\Operator;
+
+// Add fulltext relevance score as a selected column
+$results = Provider::fromFile('articles.json')
+    ->select('title', 'body')
+    ->matchAgainst(['title', 'body'], 'php performance', Fulltext::NATURAL)->as('score')
+    ->where('score', Operator::GREATER_THAN, 0)
+    ->orderBy('score')->desc()
+    ->execute();
+```
